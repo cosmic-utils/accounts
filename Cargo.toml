@@ -3,4 +3,12 @@ name = "cosmic-accounts"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["examples/*"]
+
 [dependencies]
+zbus = "4.4.0"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+cosmic-accounts = { path = "." }
