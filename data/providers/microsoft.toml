@@ -1,0 +1,16 @@
+[provider]
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+auth_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+redirect_uri = "http://localhost:8080/callback"
+scopes = [
+    "openid",
+    "email",
+    "profile",
+    "https://graph.microsoft.com/mail.read",
+    "https://graph.microsoft.com/calendars.read",
+    "https://graph.microsoft.com/contacts.read",
+    "https://graph.microsoft.com/files.read",
+]
+capabilities = ["Email", "Calendar", "Contacts", "Files", "Documents"]

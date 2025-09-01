@@ -1,0 +1,8 @@
+[provider]
+client_id = "your-github-client-id"
+client_secret = "your-github-client-secret"
+auth_url = "https://github.com/login/oauth/authorize"
+token_url = "https://github.com/login/oauth/access_token"
+redirect_uri = "http://localhost:8080/callback"
+scopes = ["user:email", "repo", "read:org", "notifications"]
+capabilities = ["Repository", "Issues", "PullRequests"]
