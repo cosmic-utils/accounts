@@ -2,13 +2,26 @@
 name = "cosmic-accounts"
 version = "0.1.0"
 edition = "2021"
+authors = ["Eduardo Flores <edfloreshz@gmail.com>"]
+description = "COSMIC online account management service"
+repository = "https://github.com/cosmic-utils/cosmic-accounts"
 
 [workspace]
-members = ["examples/*"]
+members = ["cosmic-accounts-daemon", "cosmic-accounts-gui"]
 
 [dependencies]
 zbus = "4.4.0"
-
-[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
-cosmic-accounts = { path = "." }
+reqwest = { version = "0.11", features = ["json"] }
+oauth2 = "4.4"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+keyring = "2.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = "2.4"
+toml = "0.8"
+open = "5.3.2"
