@@ -1,7 +1,9 @@
-use crate::{auth::AuthManager, storage::AccountStorage, Provider, ProviderConfig, Result};
+use crate::{
+    auth::AuthManager, storage::AccountStorage, zbus::Account, AccountsError, Provider,
+    ProviderConfig, Result,
+};
 use chrono::Utc;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
@@ -29,24 +31,17 @@ pub struct CosmicAccounts {
 
 impl CosmicAccounts {
     pub fn new() -> Result<Self> {
-        let storage = AccountStorage::new()?;
-        let auth_manager = AuthManager::new();
-
-        // Initialize with default provider configurations
-        // In a real implementation, these would be loaded from config files
-
         Ok(Self {
-            storage,
-            auth_manager,
+            storage: AccountStorage::new()?,
+            auth_manager: AuthManager::new(),
         })
     }
 
     pub async fn setup_providers(&mut self) -> Result<()> {
-        // Load provider configurations from TOML files in data/providers/
         let providers_dir = Path::new("data/providers");
 
         if !providers_dir.exists() {
-            return Ok(()); // No providers directory, skip setup
+            return Ok(());
         }
 
         let provider_files = [
@@ -100,100 +95,44 @@ impl CosmicAccounts {
 
 #[interface(name = "com.system76.CosmicAccounts")]
 impl CosmicAccounts {
-    /// List all accounts (returns array of dictionaries)
-    async fn list_accounts(&self) -> Vec<HashMap<String, String>> {
+    /// List all accounts
+    async fn list_accounts(&self) -> Vec<Account> {
         match self.storage.list_accounts() {
-            Ok(accounts) => accounts
-                .into_iter()
-                .map(|account| {
-                    let mut info = HashMap::new();
-                    info.insert("id".to_string(), account.id.to_string());
-                    info.insert(
-                        "provider".to_string(),
-                        account.provider.display_name().to_string(),
-                    );
-                    info.insert("display_name".to_string(), account.display_name);
-                    info.insert("username".to_string(), account.username);
-                    info.insert("email".to_string(), account.email.unwrap_or_default());
-                    info.insert("enabled".to_string(), account.enabled.to_string());
-                    info.insert(
-                        "capabilities".to_string(),
-                        account
-                            .capabilities
-                            .iter()
-                            .map(|c| format!("{:?}", c))
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    );
-                    info
-                })
-                .collect(),
-            Err(_) => vec![],
+            Ok(accounts) => accounts.iter().map(|account| account.into()).collect(),
+            Err(err) => {
+                tracing::error!("Failed to list accounts: {}", err);
+                vec![]
+            }
         }
     }
 
-    /// Get a specific account by ID (returns dictionary)
-    async fn get_account(
-        &self,
-        id: &str,
-    ) -> std::result::Result<HashMap<String, String>, zbus::fdo::Error> {
-        let uuid = Uuid::parse_str(id)
-            .map_err(|_| zbus::fdo::Error::InvalidArgs("Invalid account ID".to_string()))?;
-
+    /// Get a specific account by ID
+    async fn get_account(&self, id: &str) -> zbus::fdo::Result<Account> {
+        let uuid = Uuid::parse_str(id).unwrap();
         match self.storage.get_account(&uuid) {
-            Ok(Some(account)) => {
-                let mut info = HashMap::new();
-                info.insert("id".to_string(), account.id.to_string());
-                info.insert(
-                    "provider".to_string(),
-                    account.provider.display_name().to_string(),
-                );
-                info.insert("display_name".to_string(), account.display_name);
-                info.insert("username".to_string(), account.username);
-                info.insert("email".to_string(), account.email.unwrap_or_default());
-                info.insert("enabled".to_string(), account.enabled.to_string());
-                info.insert(
-                    "capabilities".to_string(),
-                    account
-                        .capabilities
-                        .iter()
-                        .map(|c| format!("{:?}", c))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                );
-                Ok(info)
-            }
-            Ok(None) => Err(zbus::fdo::Error::Failed("Account not found".to_string())),
-            Err(_) => Err(zbus::fdo::Error::Failed("Storage error".to_string())),
+            Ok(Some(account)) => Ok(account.into()),
+            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
         }
     }
 
     /// Start OAuth2 authentication flow for a provider
-    async fn start_authentication(
-        &mut self,
-        provider_name: &str,
-    ) -> std::result::Result<String, zbus::fdo::Error> {
-        let provider = match provider_name {
-            "Google" => Provider::Google,
-            "Microsoft" => Provider::Microsoft,
-            "GitHub" => Provider::GitHub,
-            "GitLab" => Provider::GitLab,
-            _ => {
-                return Err(zbus::fdo::Error::InvalidArgs(
-                    "Unsupported provider".to_string(),
-                ))
-            }
+    async fn start_authentication(&mut self, provider_name: &str) -> zbus::fdo::Result<String> {
+        let provider = Provider::from_str(provider_name);
+
+        let Some(provider) = provider else {
+            return Err(AccountsError::InvalidProvider(provider_name.to_string()).into());
         };
 
         match self.auth_manager.start_auth_flow(provider).await {
-            Ok(auth_url) => {
-                open::that(&auth_url).unwrap();
-                Ok(auth_url)
+            Ok(url) => Ok(url),
+            Err(err) => {
+                tracing::error!("Failed to start authentication flow: {}", err);
+                Err(AccountsError::AuthenticationFailed {
+                    reason: err.to_string(),
+                }
+                .into())
             }
-            Err(e) => Err(zbus::fdo::Error::Failed(format!(
-                "Authentication failed: {}",
-                e
-            ))),
         }
     }
 
@@ -202,7 +141,7 @@ impl CosmicAccounts {
         &mut self,
         csrf_token: &str,
         authorization_code: &str,
-    ) -> std::result::Result<String, zbus::fdo::Error> {
+    ) -> zbus::fdo::Result<String> {
         match self
             .auth_manager
             .complete_auth_flow(csrf_token.to_string(), authorization_code.to_string())
@@ -215,42 +154,36 @@ impl CosmicAccounts {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(account_id)
                     }
-                    Err(_) => Err(zbus::fdo::Error::Failed(
-                        "Failed to save account".to_string(),
-                    )),
+                    Err(err) => Err(AccountsError::AccountNotSaved(err.to_string()).into()),
                 }
             }
-            Err(e) => Err(zbus::fdo::Error::Failed(format!(
-                "Authentication failed: {}",
-                e
-            ))),
+            Err(err) => Err(AccountsError::AuthenticationFailed {
+                reason: err.to_string(),
+            }
+            .into()),
         }
     }
 
     /// Remove an account
-    async fn remove_account(&mut self, id: &str) -> std::result::Result<(), zbus::fdo::Error> {
-        let uuid = Uuid::parse_str(id)
-            .map_err(|_| zbus::fdo::Error::InvalidArgs("Invalid account ID".to_string()))?;
+    async fn remove_account(&mut self, id: &str) -> zbus::fdo::Result<()> {
+        let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.remove_account(&uuid) {
             Ok(_) => {
                 // Note: Signal emission would be handled by the D-Bus framework
                 Ok(())
             }
-            Err(_) => Err(zbus::fdo::Error::Failed(
-                "Failed to remove account".to_string(),
-            )),
+            Err(err) => Err(AccountsError::AccountNotRemoved(format!(
+                "Account {id} not removed: {}",
+                err
+            ))
+            .into()),
         }
     }
 
     /// Enable or disable an account
-    async fn set_account_enabled(
-        &mut self,
-        id: &str,
-        enabled: bool,
-    ) -> std::result::Result<(), zbus::fdo::Error> {
-        let uuid = Uuid::parse_str(id)
-            .map_err(|_| zbus::fdo::Error::InvalidArgs("Invalid account ID".to_string()))?;
+    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> zbus::fdo::Result<()> {
+        let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.get_account(&uuid) {
             Ok(Some(mut account)) => {
@@ -260,23 +193,21 @@ impl CosmicAccounts {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(())
                     }
-                    Err(_) => Err(zbus::fdo::Error::Failed(
-                        "Failed to update account".to_string(),
-                    )),
+                    Err(err) => Err(AccountsError::AccountNotUpdated(format!(
+                        "Account {id} not updated: {}",
+                        err
+                    ))
+                    .into()),
                 }
             }
-            Ok(None) => Err(zbus::fdo::Error::Failed("Account not found".to_string())),
-            Err(_) => Err(zbus::fdo::Error::Failed("Storage error".to_string())),
+            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
         }
     }
 
     /// Get access token for an account (refreshing if necessary)
-    async fn get_access_token(
-        &mut self,
-        id: &str,
-    ) -> std::result::Result<String, zbus::fdo::Error> {
-        let uuid = Uuid::parse_str(id)
-            .map_err(|_| zbus::fdo::Error::InvalidArgs("Invalid account ID".to_string()))?;
+    async fn get_access_token(&mut self, id: &str) -> zbus::fdo::Result<String> {
+        let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.get_account(&uuid) {
             Ok(Some(mut account)) => {
@@ -288,9 +219,9 @@ impl CosmicAccounts {
                                 self.storage.save_account(&account).ok();
                             }
                             Err(_) => {
-                                return Err(zbus::fdo::Error::Failed(
-                                    "Failed to refresh token".to_string(),
-                                ));
+                                return Err(
+                                    AccountsError::TokenRefreshFailed(id.to_string()).into()
+                                );
                             }
                         }
                     }
@@ -298,8 +229,8 @@ impl CosmicAccounts {
 
                 Ok(account.credentials.access_token)
             }
-            Ok(None) => Err(zbus::fdo::Error::Failed("Account not found".to_string())),
-            Err(_) => Err(zbus::fdo::Error::Failed("Storage error".to_string())),
+            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
         }
     }
 

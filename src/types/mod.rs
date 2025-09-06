@@ -1,6 +1,10 @@
+use std::fmt::Display;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub mod zbus;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Account {
@@ -24,11 +28,20 @@ pub enum Provider {
     GitLab,
     Facebook,
     Twitter,
-    Custom {
-        name: String,
-        auth_url: String,
-        token_url: String,
-    },
+}
+
+impl Provider {
+    pub fn from_str(s: impl ToString) -> Option<Self> {
+        match s.to_string().to_lowercase().as_str() {
+            "google" => Some(Provider::Google),
+            "microsoft" => Some(Provider::Microsoft),
+            "github" => Some(Provider::GitHub),
+            "gitlab" => Some(Provider::GitLab),
+            "facebook" => Some(Provider::Facebook),
+            "twitter" => Some(Provider::Twitter),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -55,6 +68,24 @@ pub enum Capability {
     PullRequests,
 }
 
+impl Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Capability::Email => write!(f, "Email"),
+            Capability::Calendar => write!(f, "Calendar"),
+            Capability::Contacts => write!(f, "Contacts"),
+            Capability::Files => write!(f, "Files"),
+            Capability::Photos => write!(f, "Photos"),
+            Capability::Documents => write!(f, "Documents"),
+            Capability::Chat => write!(f, "Chat"),
+            Capability::VideoCall => write!(f, "Video Call"),
+            Capability::Repository => write!(f, "Repository"),
+            Capability::Issues => write!(f, "Issues"),
+            Capability::PullRequests => write!(f, "Pull Requests"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub client_id: String,
@@ -74,7 +105,6 @@ impl Provider {
             Provider::GitLab => "GitLab",
             Provider::Facebook => "Facebook",
             Provider::Twitter => "Twitter",
-            Provider::Custom { name, .. } => name,
         }
     }
 
