@@ -43,7 +43,7 @@ impl AccountStorage {
     pub fn remove_account(&self, id: &Uuid) -> Result<()> {
         let mut accounts = self.load_accounts()?;
         if accounts.remove(id).is_none() {
-            return Err(AccountsError::AccountNotFound { id: id.to_string() });
+            return Err(AccountsError::AccountNotFound(id.to_string()));
         }
         self.save_accounts(&accounts)
     }

@@ -1,10 +1,12 @@
 mod auth;
+mod client;
 mod error;
 mod interfaces;
 mod storage;
 mod types;
 
 pub use auth::AuthManager;
+pub use client::CosmicAccountsClient;
 pub use error::{AccountsError, Result};
 pub use interfaces::*;
 pub use storage::AccountStorage;
