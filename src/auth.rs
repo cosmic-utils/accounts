@@ -32,7 +32,7 @@ impl AuthManager {
 
     pub fn add_provider_config(&mut self, provider: Provider, config: ProviderConfig) {
         self.configs.insert(provider.clone(), config);
-        println!("Provider configuration added: {}", provider.display_name());
+        println!("Provider configuration added: {}", provider.to_string());
     }
 
     pub async fn start_auth_flow(&mut self, provider: Provider) -> Result<String> {
