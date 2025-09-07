@@ -1,7 +1,10 @@
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::{widget, Application, Core, Element};
+use cosmic_accounts::{CosmicAccountsProxy, Provider};
 use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use zbus::Connection;
 
 const APP_ID: &str = "com.system76.CosmicAccounts";
 
@@ -9,19 +12,21 @@ const APP_ID: &str = "com.system76.CosmicAccounts";
 pub enum Message {
     AddAccount,
     RemoveAccount(String),
+    CreateClient,
+    SetClient(Option<CosmicAccountsProxy<'static>>),
     LoadAccounts(Vec<AccountInfo>),
     RefreshAccounts,
     AccountSelected(String),
-    ProviderSelected(String),
+    ProviderSelected(Provider),
     StartAuth,
-    None,
 }
 
 pub struct CosmicAccountsApp {
     core: Core,
+    client: Option<CosmicAccountsProxy<'static>>,
     accounts: Vec<AccountInfo>,
     selected_account: Option<String>,
-    selected_provider: Option<String>,
+    selected_provider: Option<Provider>,
     show_add_dialog: bool,
 }
 
@@ -53,6 +58,7 @@ impl Application for CosmicAccountsApp {
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
         let app = CosmicAccountsApp {
             core,
+            client: None,
             accounts: Vec::new(),
             selected_account: None,
             selected_provider: None,
@@ -68,10 +74,11 @@ impl Application for CosmicAccountsApp {
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
+        let mut tasks = vec![];
+
         match message {
             Message::AddAccount => {
                 self.show_add_dialog = true;
-                Task::none()
             }
             Message::RemoveAccount(account_id) => {
                 info!("Removing account: {}", account_id);
@@ -79,38 +86,77 @@ impl Application for CosmicAccountsApp {
                 if self.selected_account.as_ref() == Some(&account_id) {
                     self.selected_account = None;
                 }
-                Task::none()
             }
+            Message::CreateClient => {
+                tasks.push(Task::perform(
+                    async {
+                        match Connection::session().await {
+                            Ok(connection) => match CosmicAccountsProxy::new(&connection).await {
+                                Ok(proxy) => Some(proxy),
+                                Err(err) => {
+                                    tracing::error!("{err}");
+                                    None
+                                }
+                            },
+                            Err(err) => {
+                                tracing::error!("{err}");
+                                None
+                            }
+                        }
+                    },
+                    |client| cosmic::Action::App(Message::SetClient(client)),
+                ));
+            }
+            Message::SetClient(client) => self.client = client,
             Message::LoadAccounts(accounts) => {
                 info!("Refreshing accounts list");
                 println!("Loaded accounts: {:?}", accounts);
-                Task::none()
             }
             Message::RefreshAccounts => {
                 info!("Refreshing accounts list");
-                Task::perform(load_accounts(), |_| {
+                tasks.push(Task::perform(load_accounts(), |_| {
                     // For now, we'll just return None as we don't have actual accounts
                     cosmic::Action::None
-                })
+                }));
             }
             Message::AccountSelected(account_id) => {
                 self.selected_account = Some(account_id);
-                Task::none()
             }
             Message::ProviderSelected(provider) => {
                 self.selected_provider = Some(provider);
-                Task::none()
             }
             Message::StartAuth => {
                 if let Some(provider) = &self.selected_provider {
-                    info!("Starting authentication for provider: {}", provider);
-                    // This would start the OAuth flow
+                    info!(
+                        "Starting authentication for provider: {}",
+                        provider.to_string()
+                    );
+                    let client = self.client.clone();
+                    if let (Some(mut client), Some(provider)) =
+                        (client, self.selected_provider.clone())
+                    {
+                        tasks.push(Task::perform(
+                            async move {
+                                match client.start_authentication(&provider.to_string()).await {
+                                    Ok(url) => match open::that(url) {
+                                        Ok(_) => {
+                                            tracing::info!("Opened URL")
+                                        }
+                                        Err(_) => {}
+                                    },
+                                    Err(err) => {
+                                        tracing::error!("{err}");
+                                    }
+                                }
+                            },
+                            |_| cosmic::Action::None,
+                        ));
+                    }
                 }
                 self.show_add_dialog = false;
-                Task::none()
             }
-            Message::None => Task::none(),
         }
+        Task::batch(tasks)
     }
 
     fn view(&self) -> Element<Self::Message> {
@@ -197,19 +243,19 @@ impl CosmicAccountsApp {
     }
 
     fn view_add_dialog(&self) -> Element<Message> {
-        let providers = vec!["Google", "Microsoft", "GitHub", "GitLab"];
+        let providers = Provider::list();
         let mut provider_buttons = Vec::new();
 
         for provider in providers {
-            let is_selected = self.selected_provider.as_ref() == Some(&provider.to_string());
+            let is_selected = self.selected_provider.as_ref() == Some(&provider);
             let button = if is_selected {
-                widget::button::suggested(provider)
+                widget::button::suggested(provider.to_string())
             } else {
-                widget::button::standard(provider)
+                widget::button::standard(provider.to_string())
             };
             provider_buttons.push(
                 button
-                    .on_press(Message::ProviderSelected(provider.to_string()))
+                    .on_press(Message::ProviderSelected(provider.clone()))
                     .into(),
             );
         }
@@ -253,7 +299,13 @@ async fn load_accounts() -> Vec<AccountInfo> {
 }
 
 fn main() -> cosmic::iced::Result {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     info!("Starting COSMIC Accounts GUI");
 

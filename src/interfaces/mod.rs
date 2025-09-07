@@ -1,3 +1,3 @@
 mod accounts;
 
-pub use accounts::CosmicAccounts;
+pub use accounts::*;

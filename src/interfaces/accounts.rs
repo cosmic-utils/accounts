@@ -1,113 +1,49 @@
 use crate::{
-    auth::AuthManager, storage::AccountStorage, zbus::Account, AccountsError, Provider,
-    ProviderConfig, Result,
+    auth::AuthManager, storage::AccountStorage, zbus::Account, AccountProviderConfig,
+    AccountsError, Provider, ProviderConfig,
 };
 use chrono::Utc;
-use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
-use zbus::{interface, SignalContext};
+use zbus::{fdo::Result, interface, proxy, SignalContext};
 
-#[derive(Deserialize)]
-struct AccountProviderConfig {
-    provider: AccountProvider,
-}
-
-#[derive(Deserialize)]
-struct AccountProvider {
-    client_id: String,
-    client_secret: String,
-    auth_url: String,
-    token_url: String,
-    redirect_uri: String,
-    scopes: Vec<String>,
-}
-
-pub struct CosmicAccounts {
+pub struct CosmicAccountsInterface {
     storage: AccountStorage,
     auth_manager: AuthManager,
 }
 
-impl CosmicAccounts {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            storage: AccountStorage::new()?,
-            auth_manager: AuthManager::new(),
-        })
-    }
-
-    pub async fn setup_providers(&mut self) -> Result<()> {
-        let providers_dir = Path::new("data/providers");
-
-        if !providers_dir.exists() {
-            return Ok(());
-        }
-
-        let provider_files = [
-            ("google.toml", Provider::Google),
-            ("microsoft.toml", Provider::Microsoft),
-            ("github.toml", Provider::GitHub),
-            ("gitlab.toml", Provider::GitLab),
-        ];
-
-        for (filename, provider) in provider_files.iter() {
-            let config_path = providers_dir.join(filename);
-
-            if config_path.exists() {
-                match self.load_provider_config(&config_path, provider.clone()) {
-                    Ok(config) => {
-                        self.auth_manager
-                            .add_provider_config(provider.clone(), config);
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Failed to load provider config for {}: {}",
-                            provider.display_name(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn load_provider_config(
-        &self,
-        config_path: &Path,
-        _provider: Provider,
-    ) -> Result<ProviderConfig> {
-        let content = fs::read_to_string(config_path)?;
-        let toml_config: AccountProviderConfig = toml::from_str(&content)?;
-
-        Ok(ProviderConfig {
-            client_id: toml_config.provider.client_id,
-            client_secret: toml_config.provider.client_secret,
-            auth_url: toml_config.provider.auth_url,
-            token_url: toml_config.provider.token_url,
-            redirect_uri: toml_config.provider.redirect_uri,
-            scopes: toml_config.provider.scopes,
-        })
-    }
+#[proxy(
+    interface = "com.system76.CosmicAccounts",
+    default_path = "/com/system76/CosmicAccounts",
+    default_service = "com.system76.CosmicAccounts"
+)]
+trait CosmicAccounts {
+    async fn list_accounts(&self) -> Result<Vec<Account>>;
+    async fn get_account(&self, id: &str) -> Result<Account>;
+    async fn start_authentication(&mut self, provider_name: &str) -> Result<String>;
+    async fn complete_authentication(
+        &mut self,
+        csrf_token: &str,
+        authorization_code: &str,
+    ) -> Result<String>;
+    async fn remove_account(&mut self, id: &str) -> Result<()>;
+    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
+    async fn get_access_token(&mut self, id: &str) -> Result<String>;
 }
 
 #[interface(name = "com.system76.CosmicAccounts")]
-impl CosmicAccounts {
+impl CosmicAccountsInterface {
     /// List all accounts
-    async fn list_accounts(&self) -> Vec<Account> {
-        match self.storage.list_accounts() {
-            Ok(accounts) => accounts.iter().map(|account| account.into()).collect(),
-            Err(err) => {
-                tracing::error!("Failed to list accounts: {}", err);
-                vec![]
-            }
-        }
+    async fn list_accounts(&self) -> Result<Vec<Account>> {
+        self.storage
+            .list_accounts()
+            .map(|a| a.into_iter().map(|a| a.into()).collect())
+            .map_err(|e| e.into())
     }
 
     /// Get a specific account by ID
-    async fn get_account(&self, id: &str) -> zbus::fdo::Result<Account> {
+    async fn get_account(&self, id: &str) -> Result<Account> {
         let uuid = Uuid::parse_str(id).unwrap();
         match self.storage.get_account(&uuid) {
             Ok(Some(account)) => Ok(account.into()),
@@ -117,7 +53,7 @@ impl CosmicAccounts {
     }
 
     /// Start OAuth2 authentication flow for a provider
-    async fn start_authentication(&mut self, provider_name: &str) -> zbus::fdo::Result<String> {
+    async fn start_authentication(&mut self, provider_name: &str) -> Result<String> {
         let provider = Provider::from_str(provider_name);
 
         let Some(provider) = provider else {
@@ -141,7 +77,7 @@ impl CosmicAccounts {
         &mut self,
         csrf_token: &str,
         authorization_code: &str,
-    ) -> zbus::fdo::Result<String> {
+    ) -> Result<String> {
         match self
             .auth_manager
             .complete_auth_flow(csrf_token.to_string(), authorization_code.to_string())
@@ -165,7 +101,7 @@ impl CosmicAccounts {
     }
 
     /// Remove an account
-    async fn remove_account(&mut self, id: &str) -> zbus::fdo::Result<()> {
+    async fn remove_account(&mut self, id: &str) -> Result<()> {
         let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.remove_account(&uuid) {
@@ -182,7 +118,7 @@ impl CosmicAccounts {
     }
 
     /// Enable or disable an account
-    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> zbus::fdo::Result<()> {
+    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
         let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.get_account(&uuid) {
@@ -206,7 +142,7 @@ impl CosmicAccounts {
     }
 
     /// Get access token for an account (refreshing if necessary)
-    async fn get_access_token(&mut self, id: &str) -> zbus::fdo::Result<String> {
+    async fn get_access_token(&mut self, id: &str) -> Result<String> {
         let uuid = Uuid::parse_str(id).unwrap();
 
         match self.storage.get_account(&uuid) {
@@ -245,4 +181,66 @@ impl CosmicAccounts {
     async fn account_changed(ctxt: &SignalContext<'_>, account_id: &str) -> zbus::Result<()>;
 }
 
-// AccountInfo is now represented as HashMap<String, String> for D-Bus compatibility
+impl CosmicAccountsInterface {
+    pub fn new() -> crate::Result<Self> {
+        Ok(Self {
+            storage: AccountStorage::new()?,
+            auth_manager: AuthManager::new(),
+        })
+    }
+
+    pub async fn setup_providers(&mut self) -> Result<()> {
+        let providers_dir = Path::new("data/providers");
+
+        if !providers_dir.exists() {
+            return Ok(());
+        }
+
+        let provider_files = [
+            ("google.toml", Provider::Google),
+            ("microsoft.toml", Provider::Microsoft),
+            ("github.toml", Provider::GitHub),
+            ("gitlab.toml", Provider::GitLab),
+        ];
+
+        for (filename, provider) in provider_files.iter() {
+            let config_path = providers_dir.join(filename);
+
+            if config_path.exists() {
+                match self.load_provider_config(&config_path, provider.clone()) {
+                    Ok(config) => {
+                        self.auth_manager
+                            .add_provider_config(provider.clone(), config);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Failed to load provider config for {}: {}",
+                            provider.to_string(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_provider_config(
+        &self,
+        config_path: &Path,
+        _provider: Provider,
+    ) -> crate::Result<ProviderConfig> {
+        let content = fs::read_to_string(config_path)?;
+        let toml_config: AccountProviderConfig = toml::from_str(&content)?;
+
+        Ok(ProviderConfig {
+            client_id: toml_config.provider.client_id,
+            client_secret: toml_config.provider.client_secret,
+            auth_url: toml_config.provider.auth_url,
+            token_url: toml_config.provider.token_url,
+            redirect_uri: toml_config.provider.redirect_uri,
+            scopes: toml_config.provider.scopes,
+        })
+    }
+}
