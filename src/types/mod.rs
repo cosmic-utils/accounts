@@ -39,10 +39,6 @@ pub struct AccountProvider {
 pub enum Provider {
     Google,
     Microsoft,
-    GitHub,
-    GitLab,
-    Facebook,
-    Twitter,
 }
 
 impl Provider {
@@ -50,23 +46,12 @@ impl Provider {
         match s.to_string().to_lowercase().as_str() {
             "google" => Some(Provider::Google),
             "microsoft" => Some(Provider::Microsoft),
-            "github" => Some(Provider::GitHub),
-            "gitlab" => Some(Provider::GitLab),
-            "facebook" => Some(Provider::Facebook),
-            "twitter" => Some(Provider::Twitter),
             _ => None,
         }
     }
 
-    pub fn list() -> [Self; 6] {
-        [
-            Self::Google,
-            Self::Microsoft,
-            Self::GitHub,
-            Self::GitLab,
-            Self::Facebook,
-            Self::Twitter,
-        ]
+    pub fn list() -> [Self; 2] {
+        [Self::Google, Self::Microsoft]
     }
 }
 
@@ -127,10 +112,6 @@ impl Display for Provider {
         match self {
             Provider::Google => write!(f, "Google"),
             Provider::Microsoft => write!(f, "Microsoft"),
-            Provider::GitHub => write!(f, "GitHub"),
-            Provider::GitLab => write!(f, "GitLab"),
-            Provider::Facebook => write!(f, "Facebook"),
-            Provider::Twitter => write!(f, "Twitter"),
         }
     }
 }
@@ -152,12 +133,6 @@ impl Provider {
                 Capability::Files,
                 Capability::Documents,
             ],
-            Provider::GitHub | Provider::GitLab => vec![
-                Capability::Repository,
-                Capability::Issues,
-                Capability::PullRequests,
-            ],
-            _ => vec![],
         }
     }
 }
