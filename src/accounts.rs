@@ -6,34 +6,15 @@ use chrono::Utc;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
-use zbus::{fdo::Result, interface, proxy, SignalContext};
+use zbus::{fdo::Result, interface, SignalContext};
 
-pub struct CosmicAccountsInterface {
+pub struct CosmicAccounts {
     storage: AccountStorage,
     auth_manager: AuthManager,
 }
 
-#[proxy(
-    interface = "com.system76.CosmicAccounts",
-    default_path = "/com/system76/CosmicAccounts",
-    default_service = "com.system76.CosmicAccounts"
-)]
-trait CosmicAccounts {
-    async fn list_accounts(&self) -> Result<Vec<Account>>;
-    async fn get_account(&self, id: &str) -> Result<Account>;
-    async fn start_authentication(&mut self, provider_name: &str) -> Result<String>;
-    async fn complete_authentication(
-        &mut self,
-        csrf_token: &str,
-        authorization_code: &str,
-    ) -> Result<String>;
-    async fn remove_account(&mut self, id: &str) -> Result<()>;
-    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
-    async fn get_access_token(&mut self, id: &str) -> Result<String>;
-}
-
 #[interface(name = "com.system76.CosmicAccounts")]
-impl CosmicAccountsInterface {
+impl CosmicAccounts {
     /// List all accounts
     async fn list_accounts(&self) -> Result<Vec<Account>> {
         self.storage
@@ -44,7 +25,8 @@ impl CosmicAccountsInterface {
 
     /// Get a specific account by ID
     async fn get_account(&self, id: &str) -> Result<Account> {
-        let uuid = Uuid::parse_str(id).unwrap();
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+
         match self.storage.get_account(&uuid) {
             Ok(Some(account)) => Ok(account.into()),
             Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
@@ -102,7 +84,7 @@ impl CosmicAccountsInterface {
 
     /// Remove an account
     async fn remove_account(&mut self, id: &str) -> Result<()> {
-        let uuid = Uuid::parse_str(id).unwrap();
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         match self.storage.remove_account(&uuid) {
             Ok(_) => {
@@ -119,7 +101,7 @@ impl CosmicAccountsInterface {
 
     /// Enable or disable an account
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
-        let uuid = Uuid::parse_str(id).unwrap();
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         match self.storage.get_account(&uuid) {
             Ok(Some(mut account)) => {
@@ -143,7 +125,7 @@ impl CosmicAccountsInterface {
 
     /// Get access token for an account (refreshing if necessary)
     async fn get_access_token(&mut self, id: &str) -> Result<String> {
-        let uuid = Uuid::parse_str(id).unwrap();
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         match self.storage.get_account(&uuid) {
             Ok(Some(mut account)) => {
@@ -181,7 +163,7 @@ impl CosmicAccountsInterface {
     async fn account_changed(ctxt: &SignalContext<'_>, account_id: &str) -> zbus::Result<()>;
 }
 
-impl CosmicAccountsInterface {
+impl CosmicAccounts {
     pub fn new() -> crate::Result<Self> {
         Ok(Self {
             storage: AccountStorage::new()?,
@@ -199,8 +181,6 @@ impl CosmicAccountsInterface {
         let provider_files = [
             ("google.toml", Provider::Google),
             ("microsoft.toml", Provider::Microsoft),
-            ("github.toml", Provider::GitHub),
-            ("gitlab.toml", Provider::GitLab),
         ];
 
         for (filename, provider) in provider_files.iter() {

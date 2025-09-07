@@ -11,7 +11,18 @@ pub struct Account {
     pub enabled: bool,
     pub created_at: String,
     pub last_used: Option<String>,
+    pub credentials: Credentials,
     pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, DeserializeDict, SerializeDict, Type)]
+#[zvariant(signature = "dict")]
+pub struct Credentials {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<String>,
+    pub scope: Vec<String>,
+    pub token_type: String,
 }
 
 impl From<super::Account> for Account {
@@ -28,6 +39,16 @@ impl From<super::Account> for Account {
                 .last_used
                 .clone()
                 .map(|last_used| last_used.to_string()),
+            credentials: Credentials {
+                access_token: value.credentials.access_token,
+                refresh_token: value.credentials.refresh_token,
+                expires_at: value
+                    .credentials
+                    .expires_at
+                    .map(|expires_at| expires_at.to_string()),
+                scope: value.credentials.scope,
+                token_type: value.credentials.token_type,
+            },
             capabilities: value
                 .capabilities
                 .iter()
@@ -51,6 +72,16 @@ impl From<&super::Account> for Account {
                 .last_used
                 .clone()
                 .map(|last_used| last_used.to_string()),
+            credentials: Credentials {
+                access_token: value.credentials.access_token.clone(),
+                refresh_token: value.credentials.refresh_token.clone(),
+                expires_at: value
+                    .credentials
+                    .expires_at
+                    .map(|expires_at| expires_at.to_string()),
+                scope: value.credentials.scope.clone(),
+                token_type: value.credentials.token_type.clone(),
+            },
             capabilities: value
                 .capabilities
                 .iter()

@@ -137,13 +137,6 @@ impl AuthManager {
         let user_info_url = match provider {
             Provider::Google => "https://www.googleapis.com/oauth2/v2/userinfo",
             Provider::Microsoft => "https://graph.microsoft.com/v1.0/me",
-            Provider::GitHub => "https://api.github.com/user",
-            Provider::GitLab => "https://gitlab.com/api/v4/user",
-            _ => {
-                return Err(AccountsError::AuthenticationFailed {
-                    reason: "Unsupported provider for user info".to_string(),
-                })
-            }
         };
 
         let response = client
@@ -180,27 +173,6 @@ impl AuthManager {
                     .or_else(|| user_data["userPrincipalName"].as_str())
                     .map(|s| s.to_string()),
             },
-            Provider::GitHub => UserInfo {
-                display_name: user_data["name"]
-                    .as_str()
-                    .unwrap_or_else(|| user_data["login"].as_str().unwrap_or("Unknown"))
-                    .to_string(),
-                username: user_data["login"].as_str().unwrap_or("Unknown").to_string(),
-                email: user_data["email"].as_str().map(|s| s.to_string()),
-            },
-            Provider::GitLab => UserInfo {
-                display_name: user_data["name"].as_str().unwrap_or("Unknown").to_string(),
-                username: user_data["username"]
-                    .as_str()
-                    .unwrap_or("Unknown")
-                    .to_string(),
-                email: user_data["email"].as_str().map(|s| s.to_string()),
-            },
-            _ => {
-                return Err(AccountsError::AuthenticationFailed {
-                    reason: "Unsupported provider".to_string(),
-                })
-            }
         };
 
         Ok(user_info)
