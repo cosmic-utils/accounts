@@ -20,7 +20,22 @@ pub struct Account {
     pub capabilities: Vec<Capability>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Deserialize)]
+pub struct AccountProviderConfig {
+    pub provider: AccountProvider,
+}
+
+#[derive(Deserialize)]
+pub struct AccountProvider {
+    pub client_id: String,
+    pub client_secret: String,
+    pub auth_url: String,
+    pub token_url: String,
+    pub redirect_uri: String,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Provider {
     Google,
     Microsoft,
@@ -41,6 +56,17 @@ impl Provider {
             "twitter" => Some(Provider::Twitter),
             _ => None,
         }
+    }
+
+    pub fn list() -> [Self; 6] {
+        [
+            Self::Google,
+            Self::Microsoft,
+            Self::GitHub,
+            Self::GitLab,
+            Self::Facebook,
+            Self::Twitter,
+        ]
     }
 }
 
@@ -96,18 +122,20 @@ pub struct ProviderConfig {
     pub scopes: Vec<String>,
 }
 
-impl Provider {
-    pub fn display_name(&self) -> &str {
+impl Display for Provider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Provider::Google => "Google",
-            Provider::Microsoft => "Microsoft",
-            Provider::GitHub => "GitHub",
-            Provider::GitLab => "GitLab",
-            Provider::Facebook => "Facebook",
-            Provider::Twitter => "Twitter",
+            Provider::Google => write!(f, "Google"),
+            Provider::Microsoft => write!(f, "Microsoft"),
+            Provider::GitHub => write!(f, "GitHub"),
+            Provider::GitLab => write!(f, "GitLab"),
+            Provider::Facebook => write!(f, "Facebook"),
+            Provider::Twitter => write!(f, "Twitter"),
         }
     }
+}
 
+impl Provider {
     pub fn default_capabilities(&self) -> Vec<Capability> {
         match self {
             Provider::Google => vec![

@@ -18,7 +18,7 @@ impl From<super::Account> for Account {
     fn from(value: super::Account) -> Self {
         Self {
             id: value.id.to_string(),
-            provider: value.provider.display_name().to_string(),
+            provider: value.provider.to_string(),
             display_name: value.display_name,
             username: value.username,
             email: value.email,
@@ -41,7 +41,7 @@ impl From<&super::Account> for Account {
     fn from(value: &super::Account) -> Self {
         Self {
             id: value.id.to_string(),
-            provider: value.provider.display_name().to_string(),
+            provider: value.provider.to_string(),
             display_name: value.display_name.clone(),
             username: value.username.clone(),
             email: value.email.clone(),
