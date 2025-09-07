@@ -7,7 +7,7 @@ description = "COSMIC online account management service"
 repository = "https://github.com/cosmic-utils/cosmic-accounts"
 
 [workspace]
-members = ["cosmic-accounts-daemon", "cosmic-accounts-gui", "cosmic-accounts-server"]
+members = ["cosmic-accounts-daemon", "cosmic-accounts-gui"]
 
 [workspace.dependencies]
 zbus = "4.4.0"
