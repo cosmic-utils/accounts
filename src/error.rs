@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum AccountsError {
+pub enum Error {
     #[error("Account not found: {0}")]
     AccountNotFound(String),
 
@@ -69,63 +69,59 @@ pub enum AccountsError {
     TomlParse(#[from] toml::de::Error),
 }
 
-impl Into<zbus::fdo::Error> for AccountsError {
+impl Into<zbus::fdo::Error> for Error {
     fn into(self) -> zbus::fdo::Error {
         match self {
-            AccountsError::AccountNotFound(id) => {
+            Error::AccountNotFound(id) => {
                 zbus::fdo::Error::Failed(format!("Account {id} not found."))
             }
-            AccountsError::AuthenticationFailed { reason } => zbus::fdo::Error::Failed(reason),
-            AccountsError::TokenExpired { account_id } => {
+            Error::AuthenticationFailed { reason } => zbus::fdo::Error::Failed(reason),
+            Error::TokenExpired { account_id } => {
                 zbus::fdo::Error::Failed(format!("Token expired for {account_id}"))
             }
-            AccountsError::Network(error) => {
-                zbus::fdo::Error::Failed(format!("Network error: {error}"))
-            }
-            AccountsError::OAuth2(request_token_error) => {
+            Error::Network(error) => zbus::fdo::Error::Failed(format!("Network error: {error}")),
+            Error::OAuth2(request_token_error) => {
                 zbus::fdo::Error::Failed(format!("OAuth2 error: {request_token_error}"))
             }
-            AccountsError::Serialization(error) => {
+            Error::Serialization(error) => {
                 zbus::fdo::Error::Failed(format!("Serialization error: {error}"))
             }
-            AccountsError::Storage(error) => {
-                zbus::fdo::Error::Failed(format!("Storage error: {error}"))
-            }
-            AccountsError::DBus(error) => zbus::fdo::Error::Failed(format!("DBus error: {error}")),
-            AccountsError::Zbus(error) => zbus::fdo::Error::Failed(format!("Zbus error: {error}")),
-            AccountsError::InvalidProviderConfig => {
+            Error::Storage(error) => zbus::fdo::Error::Failed(format!("Storage error: {error}")),
+            Error::DBus(error) => zbus::fdo::Error::Failed(format!("DBus error: {error}")),
+            Error::Zbus(error) => zbus::fdo::Error::Failed(format!("Zbus error: {error}")),
+            Error::InvalidProviderConfig => {
                 zbus::fdo::Error::Failed("Invalid provider configuration".to_string())
             }
-            AccountsError::Io(error) => zbus::fdo::Error::Failed(format!("IO error: {error}")),
-            AccountsError::UrlParse(parse_error) => {
+            Error::Io(error) => zbus::fdo::Error::Failed(format!("IO error: {error}")),
+            Error::UrlParse(parse_error) => {
                 zbus::fdo::Error::Failed(format!("URL parse error: {parse_error}"))
             }
-            AccountsError::TomlParse(error) => {
+            Error::TomlParse(error) => {
                 zbus::fdo::Error::Failed(format!("Toml parse error: {error}"))
             }
-            AccountsError::InvalidArguments(args) => {
+            Error::InvalidArguments(args) => {
                 zbus::fdo::Error::Failed(format!("Invalid arguments: {args}"))
             }
-            AccountsError::StorageError(error) => {
+            Error::StorageError(error) => {
                 zbus::fdo::Error::Failed(format!("Storage error: {error}"))
             }
-            AccountsError::AccountNotSaved(id) => {
+            Error::AccountNotSaved(id) => {
                 zbus::fdo::Error::Failed(format!("Account not saved: {id}"))
             }
-            AccountsError::AccountNotUpdated(id) => {
+            Error::AccountNotUpdated(id) => {
                 zbus::fdo::Error::Failed(format!("Account not updated: {id}"))
             }
-            AccountsError::AccountNotRemoved(id) => {
+            Error::AccountNotRemoved(id) => {
                 zbus::fdo::Error::Failed(format!("Account not removed: {id}"))
             }
-            AccountsError::TokenRefreshFailed(id) => {
+            Error::TokenRefreshFailed(id) => {
                 zbus::fdo::Error::Failed(format!("Token refresh failed for account: {id}"))
             }
-            AccountsError::InvalidProvider(name) => {
+            Error::InvalidProvider(name) => {
                 zbus::fdo::Error::Failed(format!("Invalid provider: {name}"))
             }
         }
     }
 }
 
-pub type Result<T> = std::result::Result<T, AccountsError>;
+pub type Result<T> = std::result::Result<T, Error>;

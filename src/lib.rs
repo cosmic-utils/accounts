@@ -1,17 +1,11 @@
-mod accounts;
-mod auth;
+mod client;
 mod error;
 mod proxy;
-mod storage;
+mod services;
 mod types;
 
-pub use accounts::*;
+pub use client::CosmicAccountsClient;
 
-pub use auth::AuthManager;
-pub use error::{AccountsError, Result};
-pub use proxy::*;
-pub use storage::AccountStorage;
+pub use error::{Error, Result};
+pub use services::*;
 pub use types::*;
-
-pub use chrono::{DateTime, Utc};
-pub use uuid::Uuid;

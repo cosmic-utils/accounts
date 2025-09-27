@@ -1,5 +1,5 @@
-use crate::{Account, AccountsError, Credentials, Provider, ProviderConfig, Result};
 use chrono::{Duration, Utc};
+use cosmic_accounts::{Account, Credentials, Error, Provider, ProviderConfig, Result};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -20,10 +20,6 @@ impl AuthManager {
     pub fn new() -> Self {
         let configs = HashMap::new();
 
-        // Add default provider configurations
-        // Note: In a real implementation, these would be loaded from config files
-        // and client secrets would be handled more securely
-
         Self {
             configs,
             pending_auth: HashMap::new(),
@@ -32,14 +28,13 @@ impl AuthManager {
 
     pub fn add_provider_config(&mut self, provider: Provider, config: ProviderConfig) {
         self.configs.insert(provider.clone(), config);
-        println!("Provider configuration added: {}", provider.to_string());
     }
 
     pub async fn start_auth_flow(&mut self, provider: Provider) -> Result<String> {
         let config = self
             .configs
             .get(&provider)
-            .ok_or(AccountsError::InvalidProviderConfig)?;
+            .ok_or(Error::InvalidProviderConfig)?;
 
         let client = BasicClient::new(
             ClientId::new(config.client_id.clone()),
@@ -73,16 +68,17 @@ impl AuthManager {
         csrf_token: String,
         authorization_code: String,
     ) -> Result<Account> {
-        let (provider, pkce_verifier) = self.pending_auth.remove(&csrf_token).ok_or_else(|| {
-            AccountsError::AuthenticationFailed {
-                reason: "Invalid CSRF token".to_string(),
-            }
-        })?;
+        let (provider, pkce_verifier) =
+            self.pending_auth
+                .remove(&csrf_token)
+                .ok_or_else(|| Error::AuthenticationFailed {
+                    reason: "Invalid CSRF token".to_string(),
+                })?;
 
         let config = self
             .configs
             .get(&provider)
-            .ok_or(AccountsError::InvalidProviderConfig)?;
+            .ok_or(Error::InvalidProviderConfig)?;
 
         let client = BasicClient::new(
             ClientId::new(config.client_id.clone()),
@@ -149,7 +145,7 @@ impl AuthManager {
             let status = response.status();
             let error_body = response.text().await.unwrap_or("No error body".to_string());
             tracing::error!("Error response: {}", error_body);
-            return Err(AccountsError::AuthenticationFailed {
+            return Err(Error::AuthenticationFailed {
                 reason: format!("Failed to get user info: {} - {}", status, error_body),
             });
         }
@@ -185,13 +181,16 @@ impl AuthManager {
         let config = self
             .configs
             .get(&account.provider)
-            .ok_or(AccountsError::InvalidProviderConfig)?;
+            .ok_or(Error::InvalidProviderConfig)?;
 
-        let refresh_token = account.credentials.refresh_token.as_ref().ok_or_else(|| {
-            AccountsError::TokenExpired {
-                account_id: account.id.to_string(),
-            }
-        })?;
+        let refresh_token =
+            account
+                .credentials
+                .refresh_token
+                .as_ref()
+                .ok_or_else(|| Error::TokenExpired {
+                    account_id: account.id.to_string(),
+                })?;
 
         let client = BasicClient::new(
             ClientId::new(config.client_id.clone()),
