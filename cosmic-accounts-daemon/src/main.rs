@@ -1,15 +1,19 @@
+use crate::accounts::CosmicAccounts;
 use axum::{extract::Query, http::StatusCode, response::Html, routing::get, Router};
-use cosmic_accounts::{CosmicAccountsClient, Result};
+use cosmic_accounts::CosmicAccountsClient;
 use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber;
 use zbus::connection;
 
-use crate::accounts::CosmicAccounts;
-
 mod accounts;
 mod auth;
+mod config;
+mod error;
+mod models;
 mod storage;
+
+pub use error::{Error, Result};
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
@@ -130,7 +134,7 @@ async fn main() -> Result<()> {
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
         .await
-        .map_err(|e| cosmic_accounts::Error::Io(e))?;
+        .map_err(|e| Error::Io(e))?;
 
     info!("HTTP server will listen on http://127.0.0.1:8080");
     info!("OAuth callback URL: http://127.0.0.1:8080/callback");

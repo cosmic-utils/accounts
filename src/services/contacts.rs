@@ -7,8 +7,8 @@ use zbus::{
 };
 
 use crate::{
+    models::{Account, Capability, Provider},
     services::{Service, ServiceConfig},
-    Account, Capability, Provider,
 };
 
 pub struct ContactsService {
