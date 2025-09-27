@@ -24,6 +24,41 @@ struct CallbackQuery {
     error_description: Option<String>,
 }
 
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
+    info!("Starting COSMIC Accounts daemon with integrated HTTP server...");
+
+    let mut accounts = CosmicAccounts::new()?;
+    accounts.setup_providers().await?;
+
+    let router = Router::new().route("/callback", get(handle_callback));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
+        .await
+        .map_err(|e| Error::Io(e))?;
+
+    info!("HTTP server will listen on http://127.0.0.1:8080");
+    info!("OAuth callback URL: http://127.0.0.1:8080/callback");
+
+    info!("Setting up D-Bus connection...");
+    let _conn = connection::Builder::session()?
+        .name("com.system76.CosmicAccounts")?
+        .serve_at("/com/system76/CosmicAccounts", accounts)?
+        .build()
+        .await?;
+
+    info!("D-Bus service started on: com.system76.CosmicAccounts");
+    info!("Object path: /com/system76/CosmicAccounts");
+
+    info!("COSMIC Accounts daemon started successfully");
+
+    axum::serve(listener, router).await.unwrap();
+
+    Ok(())
+}
+
 async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Html<String>) {
     info!("Received OAuth callback: {:?}", params);
 
@@ -119,39 +154,4 @@ async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Ht
         "#;
         (StatusCode::BAD_REQUEST, Html(html.to_string()))
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
-
-    info!("Starting COSMIC Accounts daemon with integrated HTTP server...");
-
-    let mut accounts = CosmicAccounts::new()?;
-    accounts.setup_providers().await?;
-
-    let router = Router::new().route("/callback", get(handle_callback));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
-        .await
-        .map_err(|e| Error::Io(e))?;
-
-    info!("HTTP server will listen on http://127.0.0.1:8080");
-    info!("OAuth callback URL: http://127.0.0.1:8080/callback");
-
-    info!("Setting up D-Bus connection...");
-    let _conn = connection::Builder::session()?
-        .name("com.system76.CosmicAccounts")?
-        .serve_at("/com/system76/CosmicAccounts", accounts)?
-        .build()
-        .await?;
-
-    info!("D-Bus service started on: com.system76.CosmicAccounts");
-    info!("Object path: /com/system76/CosmicAccounts");
-
-    info!("COSMIC Accounts daemon started successfully");
-
-    axum::serve(listener, router).await.unwrap();
-
-    Ok(())
 }

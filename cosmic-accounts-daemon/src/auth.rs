@@ -56,6 +56,11 @@ impl AuthManager {
             auth_request = auth_request.add_scope(Scope::new(scope.clone()));
         }
 
+        // Add access_type=offline for Google to get refresh tokens
+        if matches!(provider, Provider::Google) {
+            auth_request = auth_request.add_extra_param("access_type", "offline");
+        }
+
         let (auth_url, csrf_token) = auth_request.url();
 
         // Store the PKCE verifier for later use
@@ -181,7 +186,7 @@ impl AuthManager {
         Ok(user_info)
     }
 
-    pub async fn refresh_token(&self, account: &mut Account) -> Result<()> {
+    pub async fn refresh_token(&self, account: &Account) -> Result<()> {
         let config = self
             .configs
             .get(&account.provider)
@@ -220,6 +225,21 @@ impl AuthManager {
         self.storage
             .update_account_credentials(&account.id, &credentials)?;
 
+        Ok(())
+    }
+
+    pub async fn ensure_credentials(&mut self, account: &mut Account) -> Result<()> {
+        // Check if token is expired and refresh if necessary
+        let credentials = self
+            .storage
+            .get_account_credentials(&account.id)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+
+        if let Some(expires_at) = credentials.expires_at {
+            if expires_at <= Utc::now() {
+                self.refresh_token(&account).await?;
+            }
+        }
         Ok(())
     }
 }
