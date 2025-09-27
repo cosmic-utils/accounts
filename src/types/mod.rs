@@ -1,8 +1,7 @@
-use std::{fmt::Display, str::FromStr};
-
-use chrono::{DateTime, Utc};
+pub use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use std::{fmt::Display, str::FromStr};
+pub use uuid::Uuid;
 
 pub mod zbus;
 
@@ -104,14 +103,7 @@ pub enum Capability {
     Email,
     Calendar,
     Contacts,
-    Files,
-    Photos,
-    Documents,
-    Chat,
-    VideoCall,
-    Repository,
-    Issues,
-    PullRequests,
+    Todo,
 }
 
 impl From<String> for Capability {
@@ -120,15 +112,8 @@ impl From<String> for Capability {
             "Email" => Capability::Email,
             "Calendar" => Capability::Calendar,
             "Contacts" => Capability::Contacts,
-            "Files" => Capability::Files,
-            "Photos" => Capability::Photos,
-            "Documents" => Capability::Documents,
-            "Chat" => Capability::Chat,
-            "Video Call" => Capability::VideoCall,
-            "Repository" => Capability::Repository,
-            "Issues" => Capability::Issues,
-            "Pull Requests" => Capability::PullRequests,
-            _ => panic!("Invalid capability"),
+            "Todo" => Capability::Todo,
+            capability => panic!("Invalid capability: {}", capability),
         }
     }
 }
@@ -139,14 +124,7 @@ impl Display for Capability {
             Capability::Email => write!(f, "Email"),
             Capability::Calendar => write!(f, "Calendar"),
             Capability::Contacts => write!(f, "Contacts"),
-            Capability::Files => write!(f, "Files"),
-            Capability::Photos => write!(f, "Photos"),
-            Capability::Documents => write!(f, "Documents"),
-            Capability::Chat => write!(f, "Chat"),
-            Capability::VideoCall => write!(f, "Video Call"),
-            Capability::Repository => write!(f, "Repository"),
-            Capability::Issues => write!(f, "Issues"),
-            Capability::PullRequests => write!(f, "Pull Requests"),
+            Capability::Todo => write!(f, "Todo"),
         }
     }
 }
@@ -177,15 +155,13 @@ impl Provider {
                 Capability::Email,
                 Capability::Calendar,
                 Capability::Contacts,
-                Capability::Files,
-                Capability::Photos,
+                Capability::Todo,
             ],
             Provider::Microsoft => vec![
                 Capability::Email,
                 Capability::Calendar,
                 Capability::Contacts,
-                Capability::Files,
-                Capability::Documents,
+                Capability::Todo,
             ],
         }
     }
