@@ -1,9 +1,9 @@
 use axum::{extract::Query, http::StatusCode, response::Html, routing::get, Router};
-use cosmic_accounts::{CosmicAccounts, Result};
+use cosmic_accounts::{CosmicAccounts, CosmicAccountsProxy, Result};
 use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber;
-use zbus::connection;
+use zbus::{connection, Connection};
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
@@ -16,6 +16,20 @@ struct CallbackQuery {
 
 async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Html<String>) {
     info!("Received OAuth callback: {:?}", params);
+
+    let Ok(connection) = Connection::session().await else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Html("D-Bus connection error".to_string()),
+        );
+    };
+
+    let Ok(mut client) = CosmicAccountsProxy::new(&connection).await else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Html("Cosmic Accounts proxy error".to_string()),
+        );
+    };
 
     if let Some(error) = &params.error {
         let html = format!(
@@ -46,9 +60,22 @@ async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Ht
                 .unwrap_or("No description")
         );
         (StatusCode::BAD_REQUEST, Html(html))
-    } else if params.code.is_some() {
-        // TODO: Process the OAuth code here
-        // You can communicate with the D-Bus service or handle the token exchange
+    } else if let (Some(authorization_code), Some(csrf_token)) = (params.code, params.state) {
+        let account_id = match client
+            .complete_authentication(&csrf_token, &authorization_code)
+            .await
+        {
+            Ok(account_id) => account_id,
+            Err(err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Html(format!("Failed to get user: {}", err)),
+                );
+            }
+        };
+
+        tracing::info!("User authenticated with ID: {}", account_id);
+
         let html = r#"
             <!DOCTYPE html>
             <html>
