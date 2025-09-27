@@ -1,8 +1,6 @@
-use crate::{
-    auth::AuthManager, storage::AccountStorage, zbus::Account, AccountProviderConfig,
-    AccountsError, Provider, ProviderConfig,
-};
+use crate::{auth::AuthManager, storage::AccountStorage};
 use chrono::Utc;
+use cosmic_accounts::{zbus::Account, AccountProviderConfig, Error, Provider, ProviderConfig};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
@@ -19,7 +17,7 @@ impl CosmicAccounts {
     async fn list_accounts(&self) -> Result<Vec<Account>> {
         self.storage
             .list_accounts()
-            .map(|a| a.into_iter().map(|a| a.into()).collect())
+            .map(|a| a.into_iter().map(Into::into).collect())
             .map_err(|e| e.into())
     }
 
@@ -29,8 +27,8 @@ impl CosmicAccounts {
 
         match self.storage.get_account(&uuid) {
             Ok(Some(account)) => Ok(account.into()),
-            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
+            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(Error::StorageError(err.to_string()).into()),
         }
     }
 
@@ -39,14 +37,14 @@ impl CosmicAccounts {
         let provider = Provider::from_str(provider_name);
 
         let Some(provider) = provider else {
-            return Err(AccountsError::InvalidProvider(provider_name.to_string()).into());
+            return Err(Error::InvalidProvider(provider_name.to_string()).into());
         };
 
         match self.auth_manager.start_auth_flow(provider).await {
             Ok(url) => Ok(url),
             Err(err) => {
                 tracing::error!("Failed to start authentication flow: {}", err);
-                Err(AccountsError::AuthenticationFailed {
+                Err(Error::AuthenticationFailed {
                     reason: err.to_string(),
                 }
                 .into())
@@ -72,10 +70,10 @@ impl CosmicAccounts {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(account_id)
                     }
-                    Err(err) => Err(AccountsError::AccountNotSaved(err.to_string()).into()),
+                    Err(err) => Err(Error::AccountNotSaved(err.to_string()).into()),
                 }
             }
-            Err(err) => Err(AccountsError::AuthenticationFailed {
+            Err(err) => Err(Error::AuthenticationFailed {
                 reason: err.to_string(),
             }
             .into()),
@@ -91,11 +89,9 @@ impl CosmicAccounts {
                 // Note: Signal emission would be handled by the D-Bus framework
                 Ok(())
             }
-            Err(err) => Err(AccountsError::AccountNotRemoved(format!(
-                "Account {id} not removed: {}",
-                err
-            ))
-            .into()),
+            Err(err) => {
+                Err(Error::AccountNotRemoved(format!("Account {id} not removed: {}", err)).into())
+            }
         }
     }
 
@@ -111,15 +107,15 @@ impl CosmicAccounts {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(())
                     }
-                    Err(err) => Err(AccountsError::AccountNotUpdated(format!(
+                    Err(err) => Err(Error::AccountNotUpdated(format!(
                         "Account {id} not updated: {}",
                         err
                     ))
                     .into()),
                 }
             }
-            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
+            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(Error::StorageError(err.to_string()).into()),
         }
     }
 
@@ -137,9 +133,7 @@ impl CosmicAccounts {
                                 self.storage.save_account(&account).ok();
                             }
                             Err(_) => {
-                                return Err(
-                                    AccountsError::TokenRefreshFailed(id.to_string()).into()
-                                );
+                                return Err(Error::TokenRefreshFailed(id.to_string()).into());
                             }
                         }
                     }
@@ -147,8 +141,8 @@ impl CosmicAccounts {
 
                 Ok(account.credentials.access_token)
             }
-            Ok(None) => Err(AccountsError::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(AccountsError::StorageError(err.to_string()).into()),
+            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
+            Err(err) => Err(Error::StorageError(err.to_string()).into()),
         }
     }
 

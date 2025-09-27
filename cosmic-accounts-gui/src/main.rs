@@ -2,10 +2,10 @@ use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::image::Handle;
 use cosmic::{widget, Application, Core, Element};
-use cosmic_accounts::{Account, CosmicAccountsProxy, Provider, Uuid};
+use cosmic_accounts::{Account, CosmicAccountsClient, Provider, Uuid};
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use zbus::Connection;
 
 const APP_ID: &str = "com.system76.CosmicAccounts";
 
@@ -14,7 +14,7 @@ pub enum Message {
     AddAccount,
     RemoveAccount(Uuid),
     CreateClient,
-    SetClient(Option<CosmicAccountsProxy<'static>>),
+    SetClient(Option<CosmicAccountsClient>),
     LoadAccounts,
     SetAccounts(Vec<Account>),
     RefreshAccounts,
@@ -25,7 +25,7 @@ pub enum Message {
 
 pub struct CosmicAccountsApp {
     core: Core,
-    client: Option<CosmicAccountsProxy<'static>>,
+    client: Option<CosmicAccountsClient>,
     accounts: Vec<Account>,
     selected_account: Option<Uuid>,
     selected_provider: Option<Provider>,
@@ -81,7 +81,7 @@ impl Application for CosmicAccountsApp {
                 info!("Removing account: {}", account_id);
                 if let Some(mut client) = self.client.clone() {
                     tasks.push(Task::perform(
-                        async move { client.remove_account(&account_id.to_string()).await },
+                        async move { client.remove_account(&account_id).await },
                         |_| cosmic::action::none(),
                     ));
                     self.accounts.retain(|account| account.id != account_id);
@@ -93,14 +93,8 @@ impl Application for CosmicAccountsApp {
             Message::CreateClient => {
                 tasks.push(Task::perform(
                     async {
-                        match Connection::session().await {
-                            Ok(connection) => match CosmicAccountsProxy::new(&connection).await {
-                                Ok(proxy) => Some(proxy),
-                                Err(err) => {
-                                    tracing::error!("{err}");
-                                    None
-                                }
-                            },
+                        match CosmicAccountsClient::new().await {
+                            Ok(client) => Some(client),
                             Err(err) => {
                                 tracing::error!("{err}");
                                 None
@@ -120,13 +114,7 @@ impl Application for CosmicAccountsApp {
                     tasks.push(Task::perform(
                         async move { client.list_accounts().await },
                         |accounts| match accounts {
-                            Ok(accounts) => {
-                                let accounts: Vec<Account> = accounts
-                                    .into_iter()
-                                    .map(|account| account.into())
-                                    .collect::<Vec<_>>();
-                                cosmic::Action::App(Message::SetAccounts(accounts))
-                            }
+                            Ok(accounts) => cosmic::Action::App(Message::SetAccounts(accounts)),
                             Err(err) => {
                                 tracing::error!("{err}");
                                 cosmic::Action::None
@@ -159,7 +147,7 @@ impl Application for CosmicAccountsApp {
                     {
                         tasks.push(Task::perform(
                             async move {
-                                match client.start_authentication(&provider.to_string()).await {
+                                match client.start_authentication(&provider).await {
                                     Ok(url) => match open::that(url) {
                                         Ok(_) => {
                                             tracing::info!("Opened URL")
@@ -310,11 +298,13 @@ impl CosmicAccountsApp {
 }
 
 fn main() -> cosmic::iced::Result {
+    if std::env::var("RUST_LOG").is_err() {
+        unsafe {
+            std::env::set_var("RUST_LOG", "cosmic_accounts_gui=info");
+        }
+    }
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
+        .with(EnvFilter::from_env("RUST_LOG"))
         .with(tracing_subscriber::fmt::layer())
         .init();
 

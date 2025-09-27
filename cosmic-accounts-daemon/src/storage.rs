@@ -1,4 +1,4 @@
-use crate::{Account, AccountsError, Result};
+use cosmic_accounts::{Account, Error, Result};
 use keyring::{Entry, Error as KeyringError};
 use serde_json;
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ impl AccountStorage {
                 Ok(accounts)
             }
             Err(KeyringError::NoEntry) => Ok(HashMap::new()),
-            Err(e) => Err(AccountsError::Storage(e)),
+            Err(e) => Err(Error::Storage(e)),
         }
     }
 
@@ -43,7 +43,7 @@ impl AccountStorage {
     pub fn remove_account(&self, id: &Uuid) -> Result<()> {
         let mut accounts = self.load_accounts()?;
         if accounts.remove(id).is_none() {
-            return Err(AccountsError::AccountNotFound(id.to_string()));
+            return Err(Error::AccountNotFound(id.to_string()));
         }
         self.save_accounts(&accounts)
     }

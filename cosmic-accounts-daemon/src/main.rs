@@ -1,9 +1,15 @@
 use axum::{extract::Query, http::StatusCode, response::Html, routing::get, Router};
-use cosmic_accounts::{CosmicAccounts, CosmicAccountsProxy, Result};
+use cosmic_accounts::{CosmicAccountsClient, Result};
 use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber;
-use zbus::{connection, Connection};
+use zbus::connection;
+
+use crate::accounts::CosmicAccounts;
+
+mod accounts;
+mod auth;
+mod storage;
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
@@ -17,17 +23,10 @@ struct CallbackQuery {
 async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Html<String>) {
     info!("Received OAuth callback: {:?}", params);
 
-    let Ok(connection) = Connection::session().await else {
+    let Ok(mut client) = CosmicAccountsClient::new().await else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Html("D-Bus connection error".to_string()),
-        );
-    };
-
-    let Ok(mut client) = CosmicAccountsProxy::new(&connection).await else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Html("Cosmic Accounts proxy error".to_string()),
+            Html("Cosmic Accounts Client failed to initialize".to_string()),
         );
     };
 
@@ -131,7 +130,7 @@ async fn main() -> Result<()> {
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
         .await
-        .map_err(|e| cosmic_accounts::AccountsError::Io(e))?;
+        .map_err(|e| cosmic_accounts::Error::Io(e))?;
 
     info!("HTTP server will listen on http://127.0.0.1:8080");
     info!("OAuth callback URL: http://127.0.0.1:8080/callback");
