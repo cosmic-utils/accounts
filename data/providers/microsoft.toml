@@ -8,6 +8,7 @@ scopes = [
     "openid",
     "email",
     "profile",
+    "https://graph.microsoft.com/user.read",
     "https://graph.microsoft.com/mail.read",
     "https://graph.microsoft.com/calendars.read",
     "https://graph.microsoft.com/contacts.read",

@@ -1,7 +1,8 @@
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
+use cosmic::widget::image::Handle;
 use cosmic::{widget, Application, Core, Element};
-use cosmic_accounts::{CosmicAccountsProxy, Provider};
+use cosmic_accounts::{Account, CosmicAccountsProxy, Provider, Uuid};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use zbus::Connection;
@@ -11,12 +12,13 @@ const APP_ID: &str = "com.system76.CosmicAccounts";
 #[derive(Debug, Clone)]
 pub enum Message {
     AddAccount,
-    RemoveAccount(String),
+    RemoveAccount(Uuid),
     CreateClient,
     SetClient(Option<CosmicAccountsProxy<'static>>),
-    LoadAccounts(Vec<AccountInfo>),
+    LoadAccounts,
+    SetAccounts(Vec<Account>),
     RefreshAccounts,
-    AccountSelected(String),
+    AccountSelected(Uuid),
     ProviderSelected(Provider),
     StartAuth,
 }
@@ -24,8 +26,8 @@ pub enum Message {
 pub struct CosmicAccountsApp {
     core: Core,
     client: Option<CosmicAccountsProxy<'static>>,
-    accounts: Vec<AccountInfo>,
-    selected_account: Option<String>,
+    accounts: Vec<Account>,
+    selected_account: Option<Uuid>,
     selected_provider: Option<Provider>,
     show_add_dialog: bool,
 }
@@ -65,12 +67,7 @@ impl Application for CosmicAccountsApp {
             show_add_dialog: false,
         };
 
-        (
-            app,
-            Task::perform(load_accounts(), |accounts| {
-                cosmic::Action::App(Message::LoadAccounts(accounts))
-            }),
-        )
+        (app, cosmic::task::message(Message::CreateClient))
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
@@ -82,9 +79,15 @@ impl Application for CosmicAccountsApp {
             }
             Message::RemoveAccount(account_id) => {
                 info!("Removing account: {}", account_id);
-                self.accounts.retain(|account| account.id != account_id);
-                if self.selected_account.as_ref() == Some(&account_id) {
-                    self.selected_account = None;
+                if let Some(mut client) = self.client.clone() {
+                    tasks.push(Task::perform(
+                        async move { client.remove_account(&account_id.to_string()).await },
+                        |_| cosmic::action::none(),
+                    ));
+                    self.accounts.retain(|account| account.id != account_id);
+                    if self.selected_account.as_ref() == Some(&account_id) {
+                        self.selected_account = None;
+                    }
                 }
             }
             Message::CreateClient => {
@@ -107,17 +110,36 @@ impl Application for CosmicAccountsApp {
                     |client| cosmic::Action::App(Message::SetClient(client)),
                 ));
             }
-            Message::SetClient(client) => self.client = client,
-            Message::LoadAccounts(accounts) => {
-                info!("Refreshing accounts list");
-                println!("Loaded accounts: {:?}", accounts);
+            Message::SetClient(client) => {
+                self.client = client;
+                tasks.push(cosmic::task::message(Message::LoadAccounts));
+            }
+            Message::LoadAccounts => {
+                let client = self.client.clone();
+                if let Some(client) = client {
+                    tasks.push(Task::perform(
+                        async move { client.list_accounts().await },
+                        |accounts| match accounts {
+                            Ok(accounts) => {
+                                let accounts: Vec<Account> = accounts
+                                    .into_iter()
+                                    .map(|account| account.into())
+                                    .collect::<Vec<_>>();
+                                cosmic::Action::App(Message::SetAccounts(accounts))
+                            }
+                            Err(err) => {
+                                tracing::error!("{err}");
+                                cosmic::Action::None
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::SetAccounts(accounts) => {
+                self.accounts = accounts;
             }
             Message::RefreshAccounts => {
-                info!("Refreshing accounts list");
-                tasks.push(Task::perform(load_accounts(), |_| {
-                    // For now, we'll just return None as we don't have actual accounts
-                    cosmic::Action::None
-                }));
+                tasks.push(cosmic::task::message(Message::LoadAccounts));
             }
             Message::AccountSelected(account_id) => {
                 self.selected_account = Some(account_id);
@@ -159,11 +181,11 @@ impl Application for CosmicAccountsApp {
         Task::batch(tasks)
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view<'a>(&'a self) -> Element<'a, Self::Message> {
         let content = if self.accounts.is_empty() {
-            self.view_empty_state()
+            self.view_empty_state().into()
         } else {
-            self.view_accounts_list()
+            self.view_accounts_list().into()
         };
 
         let main_content = widget::container(content)
@@ -188,7 +210,7 @@ impl Application for CosmicAccountsApp {
 }
 
 impl CosmicAccountsApp {
-    fn view_empty_state(&self) -> Element<Message> {
+    fn view_empty_state<'a>(&'a self) -> impl Into<Element<'a, Message>> {
         widget::column()
             .push(
                 widget::text("No accounts configured")
@@ -204,14 +226,14 @@ impl CosmicAccountsApp {
             .align_x(Alignment::Center)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
     }
 
-    fn view_accounts_list(&self) -> Element<Message> {
+    fn view_accounts_list<'a>(&'a self) -> impl Into<Element<'a, Message>> {
         let mut account_items = Vec::new();
 
         for account in &self.accounts {
             let account_row = widget::row()
+                .push(widget::image(provider_icon(&account.provider)).width(32))
                 .push(
                     widget::column()
                         .push(widget::text(&account.display_name).size(16))
@@ -239,10 +261,9 @@ impl CosmicAccountsApp {
         widget::column::with_children(account_items)
             .spacing(10)
             .width(Length::Fill)
-            .into()
     }
 
-    fn view_add_dialog(&self) -> Element<Message> {
+    fn view_add_dialog<'a>(&'a self) -> impl Into<Element<'a, Message>> {
         let providers = Provider::list();
         let mut provider_buttons = Vec::new();
 
@@ -285,17 +306,7 @@ impl CosmicAccountsApp {
         widget::container(dialog_content)
             .class(cosmic::theme::Container::Dialog)
             .padding(20)
-            .into()
     }
-}
-
-async fn load_accounts() -> Vec<AccountInfo> {
-    // In a real implementation, this would connect to the D-Bus service
-    // and load the actual accounts
-    info!("Loading accounts from D-Bus service");
-
-    // For now, return empty list
-    Vec::new()
 }
 
 fn main() -> cosmic::iced::Result {
@@ -316,4 +327,13 @@ fn main() -> cosmic::iced::Result {
     );
 
     cosmic::app::run::<CosmicAccountsApp>(settings, ())
+}
+
+fn provider_icon(provider: &Provider) -> Handle {
+    match provider {
+        Provider::Google => Handle::from_bytes(include_bytes!("../res/img/google.png").to_vec()),
+        Provider::Microsoft => {
+            Handle::from_bytes(include_bytes!("../res/img/microsoft.png").to_vec())
+        }
+    }
 }

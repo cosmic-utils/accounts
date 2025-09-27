@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,26 @@ pub struct Account {
     pub last_used: Option<DateTime<Utc>>,
     pub credentials: Credentials,
     pub capabilities: Vec<Capability>,
+}
+
+impl From<zbus::Account> for Account {
+    fn from(value: zbus::Account) -> Self {
+        Account {
+            id: Uuid::from_str(&value.id).unwrap(),
+            provider: Provider::from_str(&value.provider).unwrap(),
+            display_name: value.display_name,
+            username: value.username,
+            email: value.email,
+            enabled: value.enabled,
+            created_at: DateTime::from_str(&value.created_at).unwrap(),
+            last_used: value
+                .last_used
+                .map(|lu| DateTime::from_str(&lu).ok())
+                .unwrap(),
+            credentials: value.credentials.into(),
+            capabilities: value.capabilities.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -64,6 +84,21 @@ pub struct Credentials {
     pub token_type: String,
 }
 
+impl From<zbus::Credentials> for Credentials {
+    fn from(value: zbus::Credentials) -> Self {
+        Credentials {
+            access_token: value.access_token,
+            refresh_token: value.refresh_token,
+            expires_at: value
+                .expires_at
+                .map(|lu| DateTime::from_str(&lu).ok())
+                .unwrap(),
+            scope: value.scope,
+            token_type: value.token_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Capability {
     Email,
@@ -77,6 +112,25 @@ pub enum Capability {
     Repository,
     Issues,
     PullRequests,
+}
+
+impl From<String> for Capability {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "Email" => Capability::Email,
+            "Calendar" => Capability::Calendar,
+            "Contacts" => Capability::Contacts,
+            "Files" => Capability::Files,
+            "Photos" => Capability::Photos,
+            "Documents" => Capability::Documents,
+            "Chat" => Capability::Chat,
+            "Video Call" => Capability::VideoCall,
+            "Repository" => Capability::Repository,
+            "Issues" => Capability::Issues,
+            "Pull Requests" => Capability::PullRequests,
+            _ => panic!("Invalid capability"),
+        }
+    }
 }
 
 impl Display for Capability {
