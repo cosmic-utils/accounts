@@ -1,34 +1,42 @@
-use crate::{auth::AuthManager, storage::AccountStorage};
+use crate::{
+    auth::AuthManager,
+    config::CosmicAccountsConfig,
+    models::{AccountProviderConfig, ProviderConfig},
+    storage::CredentialStorage,
+    Error,
+};
 use chrono::Utc;
-use cosmic_accounts::{zbus::Account, AccountProviderConfig, Error, Provider, ProviderConfig};
+use cosmic_accounts::models::{DbusAccount, Provider};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, SignalContext};
 
 pub struct CosmicAccounts {
-    storage: AccountStorage,
+    storage: CredentialStorage,
+    config: CosmicAccountsConfig,
     auth_manager: AuthManager,
 }
 
 #[interface(name = "com.system76.CosmicAccounts")]
 impl CosmicAccounts {
     /// List all accounts
-    async fn list_accounts(&self) -> Result<Vec<Account>> {
-        self.storage
-            .list_accounts()
-            .map(|a| a.into_iter().map(Into::into).collect())
-            .map_err(|e| e.into())
+    async fn list_accounts(&self) -> Vec<DbusAccount> {
+        self.config.accounts.iter().map(Into::into).collect()
     }
 
     /// Get a specific account by ID
-    async fn get_account(&self, id: &str) -> Result<Account> {
+    async fn get_account(&self, id: &str) -> Result<DbusAccount> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
-        match self.storage.get_account(&uuid) {
-            Ok(Some(account)) => Ok(account.into()),
-            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(Error::StorageError(err.to_string()).into()),
+        match self
+            .config
+            .accounts
+            .iter()
+            .find(|account| account.id == uuid)
+        {
+            Some(account) => Ok(account.into()),
+            None => Err(Error::AccountNotFound(id.to_string()).into()),
         }
     }
 
@@ -65,7 +73,7 @@ impl CosmicAccounts {
         {
             Ok(account) => {
                 let account_id = account.id.to_string();
-                match self.storage.save_account(&account) {
+                match self.config.save_account(&account) {
                     Ok(_) => {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(account_id)
@@ -84,7 +92,7 @@ impl CosmicAccounts {
     async fn remove_account(&mut self, id: &str) -> Result<()> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
-        match self.storage.remove_account(&uuid) {
+        match self.config.remove_account(&uuid) {
             Ok(_) => {
                 // Note: Signal emission would be handled by the D-Bus framework
                 Ok(())
@@ -99,10 +107,10 @@ impl CosmicAccounts {
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
-        match self.storage.get_account(&uuid) {
-            Ok(Some(mut account)) => {
+        match self.config.get_account(&uuid) {
+            Some(mut account) => {
                 account.enabled = enabled;
-                match self.storage.save_account(&account) {
+                match self.config.save_account(&account) {
                     Ok(_) => {
                         // Note: Signal emission would be handled by the D-Bus framework
                         Ok(())
@@ -114,8 +122,7 @@ impl CosmicAccounts {
                     .into()),
                 }
             }
-            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(Error::StorageError(err.to_string()).into()),
+            None => Err(Error::AccountNotFound(id.to_string()).into()),
         }
     }
 
@@ -123,14 +130,19 @@ impl CosmicAccounts {
     async fn get_access_token(&mut self, id: &str) -> Result<String> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
-        match self.storage.get_account(&uuid) {
-            Ok(Some(mut account)) => {
+        match self.config.get_account(&uuid) {
+            Some(mut account) => {
                 // Check if token is expired and refresh if necessary
-                if let Some(expires_at) = account.credentials.expires_at {
+                let credentials = self
+                    .storage
+                    .get_account_credentials(&account.id)
+                    .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+
+                if let Some(expires_at) = credentials.expires_at {
                     if expires_at <= Utc::now() {
                         match self.auth_manager.refresh_token(&mut account).await {
                             Ok(_) => {
-                                self.storage.save_account(&account).ok();
+                                self.config.save_account(&account).ok();
                             }
                             Err(_) => {
                                 return Err(Error::TokenRefreshFailed(id.to_string()).into());
@@ -139,10 +151,9 @@ impl CosmicAccounts {
                     }
                 }
 
-                Ok(account.credentials.access_token)
+                Ok(credentials.access_token)
             }
-            Ok(None) => Err(Error::AccountNotFound(id.to_string()).into()),
-            Err(err) => Err(Error::StorageError(err.to_string()).into()),
+            None => Err(Error::AccountNotFound(id.to_string()).into()),
         }
     }
 
@@ -160,8 +171,9 @@ impl CosmicAccounts {
 impl CosmicAccounts {
     pub fn new() -> crate::Result<Self> {
         Ok(Self {
-            storage: AccountStorage::new()?,
-            auth_manager: AuthManager::new(),
+            storage: CredentialStorage::new(),
+            auth_manager: AuthManager::new()?,
+            config: CosmicAccountsConfig::config(),
         })
     }
 

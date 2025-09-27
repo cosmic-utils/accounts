@@ -19,6 +19,9 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 oauth2 = { workspace = true }
 reqwest = { workspace = true }
+cosmic-config = { git = "https://github.com/pop-os/libcosmic" }
+thiserror = { workspace = true }
+url = { workspace = true }
 
 [[bin]]
 name = "cosmic-accounts-daemon"

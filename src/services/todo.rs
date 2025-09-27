@@ -7,8 +7,8 @@ use zbus::{
 };
 
 use crate::{
+    models::{Account, Provider},
     services::{Service, ServiceConfig},
-    Account, Provider,
 };
 
 pub struct TodoService {
