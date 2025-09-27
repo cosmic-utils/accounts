@@ -146,8 +146,11 @@ impl AuthManager {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or("No error body".to_string());
+            tracing::error!("Error response: {}", error_body);
             return Err(AccountsError::AuthenticationFailed {
-                reason: format!("Failed to get user info: {}", response.status()),
+                reason: format!("Failed to get user info: {} - {}", status, error_body),
             });
         }
 
