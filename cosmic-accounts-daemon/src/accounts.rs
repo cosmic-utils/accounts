@@ -5,7 +5,6 @@ use crate::{
     storage::CredentialStorage,
     Error,
 };
-use chrono::Utc;
 use cosmic_accounts::models::{DbusAccount, Provider};
 use std::fs;
 use std::path::Path;
@@ -126,30 +125,26 @@ impl CosmicAccounts {
         }
     }
 
+    async fn ensure_credentials(&mut self) -> Result<()> {
+        for account in self.config.accounts.iter_mut() {
+            self.auth_manager
+                .ensure_credentials(account)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        }
+        Ok(())
+    }
+
     /// Get access token for an account (refreshing if necessary)
     async fn get_access_token(&mut self, id: &str) -> Result<String> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         match self.config.get_account(&uuid) {
-            Some(mut account) => {
-                // Check if token is expired and refresh if necessary
+            Some(account) => {
                 let credentials = self
                     .storage
                     .get_account_credentials(&account.id)
                     .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-
-                if let Some(expires_at) = credentials.expires_at {
-                    if expires_at <= Utc::now() {
-                        match self.auth_manager.refresh_token(&mut account).await {
-                            Ok(_) => {
-                                self.config.save_account(&account).ok();
-                            }
-                            Err(_) => {
-                                return Err(Error::TokenRefreshFailed(id.to_string()).into());
-                            }
-                        }
-                    }
-                }
 
                 Ok(credentials.access_token)
             }

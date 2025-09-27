@@ -5,6 +5,7 @@ auth_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 redirect_uri = "http://localhost:8080/callback"
 scopes = [
+    "offline_access",
     "openid",
     "email",
     "profile",
