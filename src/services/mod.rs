@@ -9,7 +9,7 @@ pub use factory::*;
 mod todo;
 pub use todo::*;
 
-use crate::Account;
+use crate::models::Account;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-use crate::Capability;
+use crate::models::Capability;
 
 use super::*;
 

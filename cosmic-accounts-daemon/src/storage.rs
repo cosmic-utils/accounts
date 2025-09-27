@@ -1,60 +1,52 @@
-use cosmic_accounts::{Account, Error, Result};
-use keyring::{Entry, Error as KeyringError};
-use serde_json;
-use std::collections::HashMap;
+use cosmic_accounts::models::Credential;
+use keyring::Entry;
 use uuid::Uuid;
 
+use crate::Error;
+
 const SERVICE_NAME: &str = "cosmic-accounts";
-const ACCOUNTS_KEY: &str = "accounts";
 
-pub struct AccountStorage {
-    entry: Entry,
-}
+pub struct CredentialStorage;
 
-impl AccountStorage {
-    pub fn new() -> Result<Self> {
-        let entry = Entry::new(SERVICE_NAME, ACCOUNTS_KEY)?;
-        Ok(Self { entry })
+impl CredentialStorage {
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn save_accounts(&self, accounts: &HashMap<Uuid, Account>) -> Result<()> {
-        let serialized = serde_json::to_string(accounts)?;
-        self.entry.set_password(&serialized)?;
+    pub fn get_account_credentials(&self, account_id: &Uuid) -> Result<Credential, Error> {
+        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
+        match entry.get_password() {
+            Ok(serialized) => {
+                let credential: Credential = serde_json::from_str(&serialized)?;
+                Ok(credential)
+            }
+            Err(e) => Err(crate::Error::CredentialStorage(e)),
+        }
+    }
+
+    pub fn set_account_credentials(
+        &self,
+        account_id: &Uuid,
+        credential: &Credential,
+    ) -> Result<(), Error> {
+        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
+        let serialized = serde_json::to_string(credential)?;
+        entry.set_password(&serialized)?;
         Ok(())
     }
 
-    pub fn load_accounts(&self) -> Result<HashMap<Uuid, Account>> {
-        match self.entry.get_password() {
-            Ok(serialized) => {
-                let accounts: HashMap<Uuid, Account> = serde_json::from_str(&serialized)?;
-                Ok(accounts)
-            }
-            Err(KeyringError::NoEntry) => Ok(HashMap::new()),
-            Err(e) => Err(Error::Storage(e)),
-        }
+    pub fn delete_account_credentials(&self, account_id: &Uuid) -> Result<(), Error> {
+        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
+        entry.delete_password()?;
+        Ok(())
     }
 
-    pub fn save_account(&self, account: &Account) -> Result<()> {
-        let mut accounts = self.load_accounts()?;
-        accounts.insert(account.id, account.clone());
-        self.save_accounts(&accounts)
-    }
-
-    pub fn remove_account(&self, id: &Uuid) -> Result<()> {
-        let mut accounts = self.load_accounts()?;
-        if accounts.remove(id).is_none() {
-            return Err(Error::AccountNotFound(id.to_string()));
-        }
-        self.save_accounts(&accounts)
-    }
-
-    pub fn get_account(&self, id: &Uuid) -> Result<Option<Account>> {
-        let accounts = self.load_accounts()?;
-        Ok(accounts.get(id).cloned())
-    }
-
-    pub fn list_accounts(&self) -> Result<Vec<Account>> {
-        let accounts = self.load_accounts()?;
-        Ok(accounts.into_values().collect())
+    pub fn update_account_credentials(
+        &self,
+        account_id: &Uuid,
+        credential: &Credential,
+    ) -> Result<(), Error> {
+        self.delete_account_credentials(account_id)?;
+        self.set_account_credentials(account_id, credential)
     }
 }

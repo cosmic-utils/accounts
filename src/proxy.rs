@@ -1,7 +1,7 @@
 use zbus::fdo::Result;
 use zbus::proxy;
 
-use crate::zbus::Account;
+use crate::models::DbusAccount;
 
 #[proxy(
     interface = "com.system76.CosmicAccounts",
@@ -9,8 +9,8 @@ use crate::zbus::Account;
     default_service = "com.system76.CosmicAccounts"
 )]
 trait CosmicAccounts {
-    async fn list_accounts(&self) -> Result<Vec<Account>>;
-    async fn get_account(&self, id: &str) -> Result<Account>;
+    async fn list_accounts(&self) -> Result<Vec<DbusAccount>>;
+    async fn get_account(&self, id: &str) -> Result<DbusAccount>;
     async fn start_authentication(&mut self, provider_name: &str) -> Result<String>;
     async fn complete_authentication(
         &mut self,

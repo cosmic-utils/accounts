@@ -1,11 +1,9 @@
 mod client;
 mod error;
+pub mod models;
 mod proxy;
-mod services;
-mod types;
+pub mod services;
 
 pub use client::CosmicAccountsClient;
 
-pub use error::{Error, Result};
-pub use services::*;
-pub use types::*;
+pub use uuid::Uuid;

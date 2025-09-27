@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use cosmic_accounts::{Account, Credentials, Error, Provider, ProviderConfig, Result};
+use cosmic_accounts::models::{Account, Credential, Provider};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -11,19 +11,21 @@ use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::{error::*, models::ProviderConfig, storage::CredentialStorage};
+
 pub struct AuthManager {
     configs: HashMap<Provider, ProviderConfig>,
     pending_auth: HashMap<String, (Provider, PkceCodeVerifier)>,
+    storage: CredentialStorage,
 }
 
 impl AuthManager {
-    pub fn new() -> Self {
-        let configs = HashMap::new();
-
-        Self {
-            configs,
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            configs: HashMap::new(),
             pending_auth: HashMap::new(),
-        }
+            storage: CredentialStorage::new(),
+        })
     }
 
     pub fn add_provider_config(&mut self, provider: Provider, config: ProviderConfig) {
@@ -103,7 +105,7 @@ impl AuthManager {
         // Get user information
         let user_info = self.get_user_info(&provider, access_token).await?;
 
-        let credentials = Credentials {
+        let credentials = Credential {
             access_token: access_token.clone(),
             refresh_token,
             expires_at,
@@ -120,9 +122,11 @@ impl AuthManager {
             enabled: true,
             created_at: Utc::now(),
             last_used: Some(Utc::now()),
-            credentials,
-            capabilities: provider.default_capabilities(),
+            capabilities: vec![],
         };
+
+        self.storage
+            .set_account_credentials(&account.id, &credentials)?;
 
         Ok(account)
     }
@@ -183,9 +187,10 @@ impl AuthManager {
             .get(&account.provider)
             .ok_or(Error::InvalidProviderConfig)?;
 
+        let mut credentials = self.storage.get_account_credentials(&account.id)?;
+
         let refresh_token =
-            account
-                .credentials
+            credentials
                 .refresh_token
                 .as_ref()
                 .ok_or_else(|| Error::TokenExpired {
@@ -204,13 +209,16 @@ impl AuthManager {
             .request_async(async_http_client)
             .await?;
 
-        account.credentials.access_token = token_result.access_token().secret().clone();
+        credentials.access_token = token_result.access_token().secret().clone();
         if let Some(new_refresh_token) = token_result.refresh_token() {
-            account.credentials.refresh_token = Some(new_refresh_token.secret().clone());
+            credentials.refresh_token = Some(new_refresh_token.secret().clone());
         }
-        account.credentials.expires_at = token_result
+        credentials.expires_at = token_result
             .expires_in()
             .map(|duration| Utc::now() + Duration::seconds(duration.as_secs() as i64));
+
+        self.storage
+            .update_account_credentials(&account.id, &credentials)?;
 
         Ok(())
     }
