@@ -24,7 +24,7 @@ impl TodoService {
 #[interface(name = "com.system76.CosmicAccounts.Todo")]
 impl TodoService {
     /// ToDo API URI - following GOA's Uri pattern
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         if self.account_id.contains("google") {
             Ok("https://tasks.googleapis.com/tasks/v1/".to_string())

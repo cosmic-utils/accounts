@@ -1,5 +1,6 @@
 use cosmic::app::Task;
-use cosmic::iced::{Alignment, Length};
+use cosmic::iced::futures::{SinkExt, StreamExt};
+use cosmic::iced::{stream, Alignment, Length, Subscription};
 use cosmic::widget::image::Handle;
 use cosmic::{widget, Application, Core, Element};
 use cosmic_accounts::models::{Account, Provider};
@@ -149,15 +150,12 @@ impl Application for CosmicAccountsApp {
                         tasks.push(Task::perform(
                             async move {
                                 match client.start_authentication(&provider).await {
-                                    Ok(url) => match open::that(url) {
-                                        Ok(_) => {
-                                            tracing::info!("Opened URL")
+                                    Ok(url) => {
+                                        if let Err(err) = open::that(url) {
+                                            tracing::error!("{err}")
                                         }
-                                        Err(_) => {}
-                                    },
-                                    Err(err) => {
-                                        tracing::error!("{err}");
                                     }
+                                    Err(err) => tracing::error!("{err}"),
                                 }
                             },
                             |_| cosmic::Action::None,
@@ -195,6 +193,57 @@ impl Application for CosmicAccountsApp {
         } else {
             main_content.into()
         }
+    }
+
+    fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
+        let Some(client) = self.client.clone() else {
+            return Subscription::none();
+        };
+        let account_changed_client = client.clone();
+        let account_removed_client = client.clone();
+
+        Subscription::batch(vec![
+            Subscription::run_with_id(
+                "account_added",
+                stream::channel(1, move |mut output| async move {
+                    if let Ok(mut account_added_stream) = client.receive_account_added().await {
+                        while let Some(_) = account_added_stream.next().await {
+                            if let Err(err) = output.send(Message::LoadAccounts).await {
+                                tracing::warn!("failed to send message from subscription: {}", err);
+                            }
+                        }
+                    }
+                }),
+            ),
+            Subscription::run_with_id(
+                "account_changed",
+                stream::channel(1, move |mut output| async move {
+                    if let Ok(mut account_changed_stream) =
+                        account_changed_client.receive_account_changed().await
+                    {
+                        while let Some(_) = account_changed_stream.next().await {
+                            if let Err(err) = output.send(Message::LoadAccounts).await {
+                                tracing::warn!("failed to send message from subscription: {}", err);
+                            }
+                        }
+                    }
+                }),
+            ),
+            Subscription::run_with_id(
+                "account_removed",
+                stream::channel(1, move |mut output| async move {
+                    if let Ok(mut account_removed_stream) =
+                        account_removed_client.receive_account_removed().await
+                    {
+                        while let Some(_) = account_removed_stream.next().await {
+                            if let Err(err) = output.send(Message::LoadAccounts).await {
+                                tracing::warn!("failed to send message from subscription: {}", err);
+                            }
+                        }
+                    }
+                }),
+            ),
+        ])
     }
 }
 

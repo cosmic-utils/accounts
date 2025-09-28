@@ -1,52 +1,90 @@
+use std::collections::HashMap;
+
+use crate::{Error, Result};
 use cosmic_accounts::models::Credential;
-use keyring::Entry;
+use secret_service::{EncryptionType, SecretService};
 use uuid::Uuid;
 
-use crate::Error;
-
-const SERVICE_NAME: &str = "cosmic-accounts";
-
-pub struct CredentialStorage;
+pub struct CredentialStorage {
+    service: SecretService<'static>,
+}
 
 impl CredentialStorage {
-    pub fn new() -> Self {
-        Self
+    pub async fn new() -> Result<Self> {
+        Ok(Self {
+            service: SecretService::connect(EncryptionType::Dh)
+                .await
+                .map_err(Error::CredentialStorage)?,
+        })
     }
 
-    pub fn get_account_credentials(&self, account_id: &Uuid) -> Result<Credential, Error> {
-        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
-        match entry.get_password() {
-            Ok(serialized) => {
-                let credential: Credential = serde_json::from_str(&serialized)?;
-                Ok(credential)
-            }
-            Err(e) => Err(crate::Error::CredentialStorage(e)),
+    pub async fn get_account_credentials(&self, account_id: &Uuid) -> Result<Credential> {
+        let search_items = self
+            .service
+            .search_items(HashMap::from([(
+                "account_id",
+                account_id.to_string().as_str(),
+            )]))
+            .await
+            .map_err(Error::CredentialStorage)?;
+        if let Some(item) = search_items.unlocked.first() {
+            let secret_value = item.get_secret().await.map_err(Error::CredentialStorage)?;
+            let serialized = std::str::from_utf8(&secret_value).map_err(Error::Utf8)?;
+            let credential: Credential = serde_json::from_str(serialized)?;
+            Ok(credential)
+        } else {
+            Err(Error::StorageError(format!(
+                "Credentials not found for account {}",
+                account_id
+            )))
         }
     }
 
-    pub fn set_account_credentials(
+    pub async fn set_account_credentials(
         &self,
         account_id: &Uuid,
         credential: &Credential,
-    ) -> Result<(), Error> {
-        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
+    ) -> Result<()> {
+        let collection = self
+            .service
+            .get_default_collection()
+            .await
+            .map_err(Error::CredentialStorage)?;
         let serialized = serde_json::to_string(credential)?;
-        entry.set_password(&serialized)?;
+
+        collection
+            .create_item(
+                &format!("COSMIC Account: {}", account_id),
+                HashMap::from([("account_id", account_id.to_string().as_str())]),
+                serialized.as_bytes(),
+                true, // replace existing
+                "text/plain",
+            )
+            .await
+            .map_err(|e| Error::StorageError(e.to_string()))?;
+
         Ok(())
     }
 
-    pub fn delete_account_credentials(&self, account_id: &Uuid) -> Result<(), Error> {
-        let entry = Entry::new(SERVICE_NAME, &account_id.to_string())?;
-        entry.delete_password()?;
-        Ok(())
-    }
+    pub async fn delete_account_credentials(&self, account_id: &Uuid) -> Result<()> {
+        let collection = self
+            .service
+            .get_default_collection()
+            .await
+            .map_err(Error::CredentialStorage)?;
 
-    pub fn update_account_credentials(
-        &self,
-        account_id: &Uuid,
-        credential: &Credential,
-    ) -> Result<(), Error> {
-        self.delete_account_credentials(account_id)?;
-        self.set_account_credentials(account_id, credential)
+        let search_items = collection
+            .search_items(HashMap::from([(
+                "account_id",
+                account_id.to_string().as_str(),
+            )]))
+            .await
+            .map_err(Error::CredentialStorage)?;
+
+        for item in search_items {
+            item.delete().await.map_err(Error::CredentialStorage)?;
+        }
+
+        Ok(())
     }
 }
