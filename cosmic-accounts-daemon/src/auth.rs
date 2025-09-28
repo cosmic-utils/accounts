@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use cosmic_accounts::models::{Account, Credential, Provider};
+use cosmic_accounts::CosmicAccountsConfig;
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -17,6 +18,7 @@ pub struct AuthManager {
     configs: HashMap<Provider, ProviderConfig>,
     pending_auth: HashMap<String, (Provider, PkceCodeVerifier)>,
     storage: CredentialStorage,
+    config: CosmicAccountsConfig,
 }
 
 impl AuthManager {
@@ -25,6 +27,7 @@ impl AuthManager {
             configs: HashMap::new(),
             pending_auth: HashMap::new(),
             storage: CredentialStorage::new().await?,
+            config: CosmicAccountsConfig::config(),
         })
     }
 
@@ -109,6 +112,10 @@ impl AuthManager {
 
         // Get user information
         let user_info = self.get_user_info(&provider, access_token).await?;
+
+        if self.config.account_exists(&user_info.username, &provider) {
+            return Err(Error::AccountAlreadyExists);
+        }
 
         let credentials = Credential {
             access_token: access_token.clone(),

@@ -109,10 +109,7 @@ impl CosmicAccounts {
             Some(mut account) => {
                 account.enabled = enabled;
                 match self.config.save_account(&account) {
-                    Ok(_) => {
-                        // Note: Signal emission would be handled by the D-Bus framework
-                        Ok(())
-                    }
+                    Ok(_) => Ok(()),
                     Err(err) => Err(Error::AccountNotUpdated(format!(
                         "Account {id} not updated: {}",
                         err
@@ -182,6 +179,13 @@ impl CosmicAccounts {
             .map_err(Into::into)
     }
 
+    async fn emit_account_exists(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> Result<()> {
+        emitter.account_exists().await.map_err(Into::into)
+    }
+
     /// Signals
 
     #[zbus(signal)]
@@ -192,6 +196,9 @@ impl CosmicAccounts {
 
     #[zbus(signal)]
     async fn account_changed(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn account_exists(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl CosmicAccounts {

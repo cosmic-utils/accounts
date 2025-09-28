@@ -1,4 +1,4 @@
-use crate::models::Account;
+use crate::models::{Account, Provider};
 use cosmic_config::{
     self, cosmic_config_derive::CosmicConfigEntry, Config, CosmicConfigEntry, Error,
 };
@@ -52,5 +52,11 @@ impl CosmicAccountsConfig {
 
     pub fn get_account(&self, id: &Uuid) -> Option<Account> {
         self.accounts.iter().find(|a| a.id == *id).cloned()
+    }
+
+    pub fn account_exists(&self, username: &String, provider: &Provider) -> bool {
+        self.accounts
+            .iter()
+            .any(|a| a.username == *username && a.provider == *provider)
     }
 }

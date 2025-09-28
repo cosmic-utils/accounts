@@ -14,6 +14,9 @@ pub enum Error {
     #[error("Account not removed: {0}")]
     AccountNotRemoved(String),
 
+    #[error("Account already exists")]
+    AccountAlreadyExists,
+
     #[error("Invalid arguments: {0}")]
     InvalidArguments(String),
 
@@ -134,6 +137,9 @@ impl Into<zbus::fdo::Error> for Error {
             Error::Utf8(utf8_error) => {
                 zbus::fdo::Error::Failed(format!("UTF-8 error: {utf8_error}"))
             }
+            Error::AccountAlreadyExists => {
+                zbus::fdo::Error::Failed("Account already exists".to_string())
+            }
         }
     }
 }
@@ -187,6 +193,9 @@ impl Into<zbus::Error> for Error {
                 zbus::Error::Failure(format!("Invalid provider: {name}"))
             }
             Error::Utf8(utf8_error) => zbus::Error::Failure(format!("UTF-8 error: {utf8_error}")),
+            Error::AccountAlreadyExists => {
+                zbus::Error::Failure("Account already exists".to_string())
+            }
         }
     }
 }

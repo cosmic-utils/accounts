@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use crate::{
     models::{Account, Provider},
-    proxy::{AccountAddedStream, AccountChangedStream, AccountRemovedStream, CosmicAccountsProxy},
+    proxy::{
+        AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
+        CosmicAccountsProxy,
+    },
 };
 use uuid::Uuid;
 use zbus::{fdo::Result, Connection};
@@ -52,6 +55,12 @@ impl CosmicAccountsClient {
         self.proxy.remove_account(&id.to_string()).await
     }
 
+    pub async fn set_account_enabled(&mut self, id: &Uuid, enabled: bool) -> Result<()> {
+        self.proxy
+            .set_account_enabled(&id.to_string(), enabled)
+            .await
+    }
+
     /// Signals
     pub async fn account_added(&self, account_id: &Uuid) -> Result<()> {
         self.proxy.emit_account_added(&account_id.to_string()).await
@@ -69,6 +78,10 @@ impl CosmicAccountsClient {
             .await
     }
 
+    pub async fn account_exists(&self) -> Result<()> {
+        self.proxy.emit_account_exists().await
+    }
+
     pub async fn receive_account_added(&self) -> zbus::Result<AccountAddedStream> {
         self.proxy.receive_account_added().await
     }
@@ -79,5 +92,9 @@ impl CosmicAccountsClient {
 
     pub async fn receive_account_changed(&self) -> zbus::Result<AccountChangedStream> {
         self.proxy.receive_account_changed().await
+    }
+
+    pub async fn receive_account_exists(&self) -> zbus::Result<AccountExistsStream> {
+        self.proxy.receive_account_exists().await
     }
 }
