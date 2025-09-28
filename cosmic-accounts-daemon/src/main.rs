@@ -103,7 +103,7 @@ async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Ht
             .await
         {
             Ok(account_id) => {
-                match client.account_added(account_id.clone()).await {
+                match client.account_added(&account_id).await {
                     Ok(_) => {
                         tracing::info!("Account added with ID: {}", account_id);
                     }

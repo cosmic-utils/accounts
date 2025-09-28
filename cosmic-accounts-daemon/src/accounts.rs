@@ -75,10 +75,7 @@ impl CosmicAccounts {
             Ok(account) => {
                 let account_id = account.id.to_string();
                 match self.config.save_account(&account) {
-                    Ok(_) => {
-                        // Note: Signal emission would be handled by the D-Bus framework
-                        Ok(account_id)
-                    }
+                    Ok(_) => Ok(account_id),
                     Err(err) => Err(Error::AccountNotSaved(err.to_string()).into()),
                 }
             }
