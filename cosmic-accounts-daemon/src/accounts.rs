@@ -1,15 +1,17 @@
 use crate::{
     auth::AuthManager,
-    config::CosmicAccountsConfig,
     models::{AccountProviderConfig, ProviderConfig},
     storage::CredentialStorage,
     Error,
 };
-use cosmic_accounts::models::{DbusAccount, Provider};
+use cosmic_accounts::{
+    models::{DbusAccount, Provider},
+    CosmicAccountsConfig,
+};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
-use zbus::{fdo::Result, interface, SignalContext};
+use zbus::{fdo::Result, interface, object_server::SignalEmitter};
 
 pub struct CosmicAccounts {
     storage: CredentialStorage,
@@ -144,6 +146,7 @@ impl CosmicAccounts {
                 let credentials = self
                     .storage
                     .get_account_credentials(&account.id)
+                    .await
                     .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
                 Ok(credentials.access_token)
@@ -152,22 +155,53 @@ impl CosmicAccounts {
         }
     }
 
+    async fn emit_account_added(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        account_id: &str,
+    ) -> Result<()> {
+        emitter.account_added(account_id).await.map_err(Into::into)
+    }
+
+    async fn emit_account_removed(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        account_id: &str,
+    ) -> Result<()> {
+        emitter
+            .account_removed(account_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn emit_account_changed(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        account_id: &str,
+    ) -> Result<()> {
+        emitter
+            .account_changed(account_id)
+            .await
+            .map_err(Into::into)
+    }
+
     /// Signals
-    #[zbus(signal)]
-    async fn account_added(ctxt: &SignalContext<'_>, account_id: &str) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn account_removed(ctxt: &SignalContext<'_>, account_id: &str) -> zbus::Result<()>;
+    async fn account_added(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn account_changed(ctxt: &SignalContext<'_>, account_id: &str) -> zbus::Result<()>;
+    async fn account_removed(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn account_changed(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
 }
 
 impl CosmicAccounts {
-    pub fn new() -> crate::Result<Self> {
+    pub async fn new() -> crate::Result<Self> {
         Ok(Self {
-            storage: CredentialStorage::new(),
-            auth_manager: AuthManager::new()?,
+            storage: CredentialStorage::new().await?,
+            auth_manager: AuthManager::new().await?,
             config: CosmicAccountsConfig::config(),
         })
     }

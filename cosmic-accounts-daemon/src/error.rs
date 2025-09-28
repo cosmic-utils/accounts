@@ -45,7 +45,7 @@ pub enum Error {
     Serialization(#[from] serde_json::Error),
 
     #[error("Storage error: {0}")]
-    CredentialStorage(#[from] keyring::Error),
+    CredentialStorage(#[from] secret_service::Error),
 
     #[error("Cosmic Config error: {0}")]
     CosmicConfig(#[from] cosmic_config::Error),
@@ -56,14 +56,17 @@ pub enum Error {
     #[error("Zbus error: {0}")]
     Zbus(#[from] zbus::fdo::Error),
 
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error("Invalid provider configuration")]
     InvalidProviderConfig,
 
     #[error("Invalid provider {0}")]
     InvalidProvider(String),
 
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("UTF8 error: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
 
     #[error("URL parsing error: {0}")]
     UrlParse(#[from] url::ParseError),
@@ -128,6 +131,62 @@ impl Into<zbus::fdo::Error> for Error {
             Error::InvalidProvider(name) => {
                 zbus::fdo::Error::Failed(format!("Invalid provider: {name}"))
             }
+            Error::Utf8(utf8_error) => {
+                zbus::fdo::Error::Failed(format!("UTF-8 error: {utf8_error}"))
+            }
+        }
+    }
+}
+
+impl Into<zbus::Error> for Error {
+    fn into(self) -> zbus::Error {
+        match self {
+            Error::AccountNotFound(id) => zbus::Error::Failure(format!("Account {id} not found.")),
+            Error::AuthenticationFailed { reason } => zbus::Error::Failure(reason),
+            Error::TokenExpired { account_id } => {
+                zbus::Error::Failure(format!("Token expired for {account_id}"))
+            }
+            Error::Network(error) => zbus::Error::Failure(format!("Network error: {error}")),
+            Error::OAuth2(request_token_error) => {
+                zbus::Error::Failure(format!("OAuth2 error: {request_token_error}"))
+            }
+            Error::Serialization(error) => {
+                zbus::Error::Failure(format!("Serialization error: {error}"))
+            }
+            Error::CredentialStorage(error) => {
+                zbus::Error::Failure(format!("Credential storage error: {error}"))
+            }
+            Error::CosmicConfig(error) => {
+                zbus::Error::Failure(format!("Cosmic config error: {error}"))
+            }
+            Error::DBus(error) => zbus::Error::Failure(format!("DBus error: {error}")),
+            Error::Zbus(error) => zbus::Error::Failure(format!("Zbus error: {error}")),
+            Error::InvalidProviderConfig => {
+                zbus::Error::Failure("Invalid provider configuration".to_string())
+            }
+            Error::Io(error) => zbus::Error::Failure(format!("IO error: {error}")),
+            Error::UrlParse(parse_error) => {
+                zbus::Error::Failure(format!("URL parse error: {parse_error}"))
+            }
+            Error::TomlParse(error) => zbus::Error::Failure(format!("Toml parse error: {error}")),
+            Error::InvalidArguments(args) => {
+                zbus::Error::Failure(format!("Invalid arguments: {args}"))
+            }
+            Error::StorageError(error) => zbus::Error::Failure(format!("Storage error: {error}")),
+            Error::AccountNotSaved(id) => zbus::Error::Failure(format!("Account not saved: {id}")),
+            Error::AccountNotUpdated(id) => {
+                zbus::Error::Failure(format!("Account not updated: {id}"))
+            }
+            Error::AccountNotRemoved(id) => {
+                zbus::Error::Failure(format!("Account not removed: {id}"))
+            }
+            Error::TokenRefreshFailed(id) => {
+                zbus::Error::Failure(format!("Token refresh failed for account: {id}"))
+            }
+            Error::InvalidProvider(name) => {
+                zbus::Error::Failure(format!("Invalid provider: {name}"))
+            }
+            Error::Utf8(utf8_error) => zbus::Error::Failure(format!("UTF-8 error: {utf8_error}")),
         }
     }
 }
