@@ -49,16 +49,20 @@ impl CosmicAccountsClient {
     }
 
     /// Signals
-    pub async fn account_added(&self, account_id: String) -> Result<()> {
-        self.proxy.emit_account_added(&account_id).await
+    pub async fn account_added(&self, account_id: &Uuid) -> Result<()> {
+        self.proxy.emit_account_added(&account_id.to_string()).await
     }
 
-    pub async fn account_removed(&self, account_id: String) -> Result<()> {
-        self.proxy.emit_account_removed(&account_id).await
+    pub async fn account_removed(&self, account_id: &Uuid) -> Result<()> {
+        self.proxy
+            .emit_account_removed(&account_id.to_string())
+            .await
     }
 
-    pub async fn account_changed(&self, account_id: String) -> Result<()> {
-        self.proxy.emit_account_changed(&account_id).await
+    pub async fn account_changed(&self, account_id: &Uuid) -> Result<()> {
+        self.proxy
+            .emit_account_changed(&account_id.to_string())
+            .await
     }
 
     pub async fn receive_account_added(&self) -> zbus::Result<AccountAddedStream> {

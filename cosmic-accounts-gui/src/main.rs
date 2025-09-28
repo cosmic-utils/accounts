@@ -14,6 +14,7 @@ const APP_ID: &str = "com.system76.CosmicAccounts";
 #[derive(Debug, Clone)]
 pub enum Message {
     AddAccount,
+    DeleteAccount(Uuid),
     RemoveAccount(Uuid),
     CreateClient,
     SetClient(Option<CosmicAccountsClient>),
@@ -79,17 +80,31 @@ impl Application for CosmicAccountsApp {
             Message::AddAccount => {
                 self.show_add_dialog = true;
             }
-            Message::RemoveAccount(account_id) => {
+            Message::DeleteAccount(account_id) => {
                 info!("Removing account: {}", account_id);
                 if let Some(mut client) = self.client.clone() {
                     tasks.push(Task::perform(
-                        async move { client.remove_account(&account_id).await },
-                        |_| cosmic::action::none(),
+                        async move {
+                            client.remove_account(&account_id).await?;
+                            client.account_removed(&account_id).await?;
+                            Ok(account_id)
+                        },
+                        |result: Result<Uuid, zbus::fdo::Error>| match result {
+                            Ok(account_id) => {
+                                cosmic::action::app(Message::RemoveAccount(account_id.clone()))
+                            }
+                            Err(err) => {
+                                tracing::error!("Failed to remove account: {}", err);
+                                cosmic::action::none()
+                            }
+                        },
                     ));
-                    self.accounts.retain(|account| account.id != account_id);
-                    if self.selected_account.as_ref() == Some(&account_id) {
-                        self.selected_account = None;
-                    }
+                }
+            }
+            Message::RemoveAccount(account_id) => {
+                self.accounts.retain(|account| account.id != account_id);
+                if self.selected_account.as_ref() == Some(&account_id) {
+                    self.selected_account = None;
                 }
             }
             Message::CreateClient => {
@@ -283,7 +298,7 @@ impl CosmicAccountsApp {
                 )
                 .push(
                     widget::button::destructive("Remove")
-                        .on_press(Message::RemoveAccount(account.id.clone())),
+                        .on_press(Message::DeleteAccount(account.id.clone())),
                 )
                 .spacing(10)
                 .align_y(Alignment::Center);
