@@ -113,10 +113,20 @@ async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Ht
                 }
                 account_id
             }
-            Err(err) => {
+            Err(_err) => {
+                if matches!(Error::AccountAlreadyExists, _err) {
+                    match client.account_exists().await {
+                        Ok(_) => {
+                            tracing::info!("Account already exists");
+                        }
+                        Err(err) => {
+                            tracing::error!("Failed to check account existence: {}", err);
+                        }
+                    }
+                }
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Html(format!("Failed to get user: {}", err)),
+                    Html(format!("Failed to authenticate user: {}", _err)),
                 );
             }
         };
