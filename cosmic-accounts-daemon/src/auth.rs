@@ -20,11 +20,11 @@ pub struct AuthManager {
 }
 
 impl AuthManager {
-    pub fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         Ok(Self {
             configs: HashMap::new(),
             pending_auth: HashMap::new(),
-            storage: CredentialStorage::new(),
+            storage: CredentialStorage::new().await?,
         })
     }
 
@@ -131,7 +131,8 @@ impl AuthManager {
         };
 
         self.storage
-            .set_account_credentials(&account.id, &credentials)?;
+            .set_account_credentials(&account.id, &credentials)
+            .await?;
 
         Ok(account)
     }
@@ -192,7 +193,7 @@ impl AuthManager {
             .get(&account.provider)
             .ok_or(Error::InvalidProviderConfig)?;
 
-        let mut credentials = self.storage.get_account_credentials(&account.id)?;
+        let mut credentials = self.storage.get_account_credentials(&account.id).await?;
 
         let refresh_token =
             credentials
@@ -223,7 +224,8 @@ impl AuthManager {
             .map(|duration| Utc::now() + Duration::seconds(duration.as_secs() as i64));
 
         self.storage
-            .update_account_credentials(&account.id, &credentials)?;
+            .set_account_credentials(&account.id, &credentials)
+            .await?;
 
         Ok(())
     }
@@ -233,6 +235,7 @@ impl AuthManager {
         let credentials = self
             .storage
             .get_account_credentials(&account.id)
+            .await
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
         if let Some(expires_at) = credentials.expires_at {

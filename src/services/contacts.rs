@@ -23,7 +23,7 @@ impl ContactsService {
 
 #[interface(name = "com.system76.CosmicAccounts.Contacts")]
 impl ContactsService {
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         if self.account_id.contains("google") {
             Ok("https://www.googleapis.com/.well-known/carddav".to_string())
@@ -35,7 +35,7 @@ impl ContactsService {
     }
 
     /// Whether to accept SSL errors - matches GOA's AcceptSslErrors
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn accept_ssl_errors(&self) -> Result<bool> {
         Ok(false)
     }

@@ -8,7 +8,6 @@ use zbus::connection;
 
 mod accounts;
 mod auth;
-mod config;
 mod error;
 mod models;
 mod storage;
@@ -31,7 +30,7 @@ async fn main() -> Result<()> {
 
     info!("Starting COSMIC Accounts daemon with integrated HTTP server...");
 
-    let mut accounts = CosmicAccounts::new()?;
+    let mut accounts = CosmicAccounts::new().await?;
     accounts.setup_providers().await?;
 
     let router = Router::new().route("/callback", get(handle_callback));
@@ -103,7 +102,17 @@ async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Ht
             .complete_authentication(&csrf_token, &authorization_code)
             .await
         {
-            Ok(account_id) => account_id,
+            Ok(account_id) => {
+                match client.account_added(account_id.clone()).await {
+                    Ok(_) => {
+                        tracing::info!("Account added with ID: {}", account_id);
+                    }
+                    Err(err) => {
+                        tracing::error!("Failed to add account: {}", err);
+                    }
+                }
+                account_id
+            }
             Err(err) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,

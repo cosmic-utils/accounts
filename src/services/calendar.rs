@@ -24,7 +24,7 @@ impl CalendarService {
 #[interface(name = "com.system76.CosmicAccounts.Calendar")]
 impl CalendarService {
     /// CalDAV URI - matches GOA's Uri property exactly
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         if self.account_id.contains("google") {
             Ok("https://apidata.googleusercontent.com/caldav/v2/".to_string())
@@ -36,7 +36,7 @@ impl CalendarService {
     }
 
     /// Whether to accept SSL errors - matches GOA's AcceptSslErrors
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn accept_ssl_errors(&self) -> Result<bool> {
         Ok(false)
     }

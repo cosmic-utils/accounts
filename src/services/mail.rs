@@ -24,14 +24,14 @@ impl MailService {
 #[interface(name = "com.system76.CosmicAccounts.Mail")]
 impl MailService {
     /// Email address - matches GOA's EmailAddress property
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn email_address(&self) -> Result<String> {
         // In a real implementation, this would fetch from storage
         Ok("user@example.com".to_string())
     }
 
     /// Display name - matches GOA's Name property
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn name(&self) -> Result<String> {
         Ok("User Name".to_string())
     }
@@ -39,7 +39,7 @@ impl MailService {
     // IMAP Properties - matching GOA exactly
 
     /// IMAP hostname - matches GOA's ImapHost
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_host(&self) -> Result<String> {
         if self.account_id.contains("google") {
             Ok("imap.gmail.com".to_string())
@@ -51,32 +51,32 @@ impl MailService {
     }
 
     /// IMAP username - matches GOA's ImapUserName
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_user_name(&self) -> Result<String> {
         // Usually the email address for OAuth2
         self.email_address().await
     }
 
     /// Whether IMAP is supported - matches GOA's ImapSupported
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_supported(&self) -> Result<bool> {
         Ok(true)
     }
 
     /// Whether IMAP uses SSL - matches GOA's ImapUseSsl
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_use_ssl(&self) -> Result<bool> {
         Ok(true) // Modern providers use SSL
     }
 
     /// Whether IMAP uses TLS - matches GOA's ImapUseTls
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_use_tls(&self) -> Result<bool> {
         Ok(false) // Usually SSL or TLS, not both
     }
 
     /// Whether to accept SSL errors - matches GOA's ImapAcceptSslErrors
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn imap_accept_ssl_errors(&self) -> Result<bool> {
         Ok(false)
     }
@@ -84,7 +84,7 @@ impl MailService {
     // SMTP Properties - matching GOA exactly
 
     /// SMTP hostname - matches GOA's SmtpHost
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_host(&self) -> Result<String> {
         if self.account_id.contains("google") {
             Ok("smtp.gmail.com".to_string())
@@ -96,55 +96,55 @@ impl MailService {
     }
 
     /// SMTP username - matches GOA's SmtpUserName
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_user_name(&self) -> Result<String> {
         self.email_address().await
     }
 
     /// Whether SMTP is supported - matches GOA's SmtpSupported
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_supported(&self) -> Result<bool> {
         Ok(true)
     }
 
     /// Whether SMTP uses authentication - matches GOA's SmtpUseAuth
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_use_auth(&self) -> Result<bool> {
         Ok(true)
     }
 
     /// Whether SMTP uses SSL - matches GOA's SmtpUseSsl
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_use_ssl(&self) -> Result<bool> {
         Ok(false) // Usually STARTTLS
     }
 
     /// Whether SMTP uses TLS - matches GOA's SmtpUseTls
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_use_tls(&self) -> Result<bool> {
         Ok(true) // STARTTLS
     }
 
     /// Whether to accept SMTP SSL errors - matches GOA's SmtpAcceptSslErrors
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_accept_ssl_errors(&self) -> Result<bool> {
         Ok(false)
     }
 
     /// SMTP supports LOGIN auth - matches GOA's SmtpAuthLogin
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_auth_login(&self) -> Result<bool> {
         Ok(false) // OAuth2 providers don't typically use LOGIN
     }
 
     /// SMTP supports PLAIN auth - matches GOA's SmtpAuthPlain
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_auth_plain(&self) -> Result<bool> {
         Ok(false) // OAuth2 providers don't typically use PLAIN
     }
 
     /// SMTP supports XOAUTH2 auth - matches GOA's SmtpAuthXoauth2
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn smtp_auth_xoauth2(&self) -> Result<bool> {
         Ok(true) // OAuth2 providers use XOAUTH2
     }
