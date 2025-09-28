@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     models::{Account, Provider},
     proxy::{AccountAddedStream, AccountChangedStream, AccountRemovedStream, CosmicAccountsProxy},
@@ -34,10 +36,12 @@ impl CosmicAccountsClient {
         &mut self,
         csrf_token: &str,
         authorization_code: &str,
-    ) -> Result<String> {
-        self.proxy
+    ) -> Result<Uuid> {
+        let account_id = self
+            .proxy
             .complete_authentication(csrf_token, authorization_code)
-            .await
+            .await?;
+        Uuid::from_str(&account_id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 
     pub async fn get_account(&self, id: &str) -> Result<Account> {
