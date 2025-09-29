@@ -45,7 +45,6 @@ workspace = true
 [workspace]
 members = [
     "cosmic-accounts-daemon",
-    "cosmic-accounts-gui",
     "cosmic-accounts-ui",
 ]
 
