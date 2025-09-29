@@ -52,7 +52,7 @@ impl Service for ContactsService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.capabilities.contains(&Capability::Contacts)
+        account.capabilities.contains_key(&Capability::Contacts)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {

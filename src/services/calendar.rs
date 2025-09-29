@@ -53,7 +53,7 @@ impl Service for CalendarService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.capabilities.contains(&Capability::Calendar)
+        account.capabilities.contains_key(&Capability::Calendar)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
