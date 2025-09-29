@@ -49,6 +49,7 @@ pub enum Message {
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
     ToggleDialog(DialogPage),
+    #[allow(unused)]
     UpdateDialog(DialogPage),
     CloseDialog,
     LaunchUrl(String),
