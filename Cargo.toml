@@ -59,7 +59,7 @@ url = "2.4"
 
 [workspace.dependencies.chrono]
 version = "0.4"
-features = ["serde"]
+features = ["serde", "clock"]
 
 [workspace.dependencies.cosmic-config]
 git = "https://github.com/pop-os/libcosmic"
