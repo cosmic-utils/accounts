@@ -1,6 +1,6 @@
-use chrono::{Duration, Utc};
 use accounts::models::{Account, Credential, Provider};
 use accounts::AccountsConfig;
+use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -28,12 +28,15 @@ impl AuthManager {
         let mut configs = HashMap::new();
 
         for provider in Provider::list() {
-            let config_path = Path::new("data/providers").join(provider.file_name());
-            if config_path.exists() {
-                let content = std::fs::read_to_string(config_path)?;
-                let toml_config: AccountProviderConfig = toml::from_str(&content)?;
-                configs.insert(provider.clone(), toml_config.provider);
+            let config_path =
+                Path::new("accounts-daemon/data/providers").join(provider.file_name());
+            if !config_path.exists() {
+                tracing::error!("Provider config file not found: {}", config_path.display());
+                continue;
             }
+            let content = std::fs::read_to_string(config_path)?;
+            let toml_config: AccountProviderConfig = toml::from_str(&content)?;
+            configs.insert(provider.clone(), toml_config.provider);
         }
 
         Ok(Self {
