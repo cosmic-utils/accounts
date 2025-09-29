@@ -2,17 +2,17 @@
 
 use crate::fl;
 use cosmic::app::context_drawer;
-use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Subscription, stream};
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::{Alignment, Length, Subscription, stream};
 use cosmic::prelude::*;
 use cosmic::theme::spacing;
 use cosmic::widget::image::Handle;
 use cosmic::widget::{self, ToastId, menu, nav_bar};
 use cosmic::{cosmic_theme, theme};
-use cosmic_accounts::models::{Account, Provider};
+use cosmic_accounts::models::{Account, Capability, Provider};
 use cosmic_accounts::{CosmicAccountsClient, Uuid, zbus};
 use futures_util::{SinkExt, StreamExt};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -28,6 +28,9 @@ pub struct AppModel {
     nav: nav_bar::Model,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
+    /// Dialog pages for the application.
+    dialog_pages: VecDeque<DialogPage>,
+    /// Toasts for the application.
     toasts: widget::Toasts<Message>,
     /// Client for interacting with the Cosmic Accounts API.
     client: Option<CosmicAccountsClient>,
@@ -36,7 +39,6 @@ pub struct AppModel {
     // Providers list.
     providers: Vec<Provider>,
     selected_account: Option<Account>,
-    pending_account: Option<Uuid>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -46,6 +48,9 @@ pub enum Message {
     OpenRepositoryUrl,
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
+    ToggleDialog(DialogPage),
+    UpdateDialog(DialogPage),
+    CloseDialog,
     LaunchUrl(String),
     ShowToast(String),
     CloseToast(ToastId),
@@ -54,8 +59,8 @@ pub enum Message {
     AddAccount(Uuid),
     DeleteAccount(Uuid),
     RemoveAccount(Uuid),
+    ToggleCapability(Capability, bool),
     EnableAccount(bool),
-    ToggleAccount(Uuid, bool),
     AccountSelected(Account),
     SetAccounts(Vec<Account>),
     AccountExists,
@@ -67,49 +72,198 @@ pub enum Message {
 }
 
 impl<'a> AppModel {
-    fn add_account_view(&self) -> impl Into<Element<'_, Message>> {
-        let mut column = widget::column()
-            .padding(spacing().space_xs)
-            .spacing(spacing().space_xs);
+    fn welcome_view(&self) -> impl Into<Element<'_, Message>> {
+        // Main container
+        let mut main_column = widget::column()
+            .spacing(spacing().space_m)
+            .padding([spacing().space_m, spacing().space_xs])
+            .align_x(Alignment::Center);
 
-        for provider in &self.providers {
-            let button = widget::button::standard(provider.to_string())
-                .on_press(Message::StartAuth(provider.clone()));
-            column = column.push(button);
+        // App icon and title section
+        let icon = widget::svg(widget::svg::Handle::from_memory(APP_ICON))
+            .width(64)
+            .height(64);
+
+        let title = widget::text::title1(fl!("app-title")).align_x(Horizontal::Center);
+
+        let subtitle = widget::text(fl!("manage-online"))
+            .size(16)
+            .align_x(Horizontal::Center)
+            .class(cosmic::style::Text::Accent);
+
+        let header_section = widget::column()
+            .spacing(spacing().space_xs)
+            .align_x(Alignment::Center)
+            .push(icon)
+            .push(title)
+            .push(subtitle);
+
+        main_column = main_column.push(header_section);
+
+        // Welcome message
+        let welcome_text = widget::text(fl!("connect-accounts"))
+            .align_x(Horizontal::Center)
+            .class(cosmic::theme::Text::Default);
+
+        main_column = main_column.push(welcome_text);
+
+        // Providers section
+        if !self.providers.is_empty() {
+            let mut providers_row = widget::row().spacing(spacing().space_s);
+            let mut current_row_count = 0;
+            let max_per_row = 3;
+            let mut providers_column = widget::column().spacing(spacing().space_xs);
+
+            for provider in &self.providers {
+                // Add provider icon if available
+                let provider_button = widget::row()
+                    .spacing(spacing().space_xxs)
+                    .padding(spacing().space_m)
+                    .align_y(Alignment::Center)
+                    .push(
+                        widget::image(Self::provider_icon(provider))
+                            .width(24)
+                            .height(24),
+                    )
+                    .push(widget::text(provider.to_string()))
+                    .apply(widget::button::custom)
+                    .on_press(Message::StartAuth(provider.clone()));
+
+                providers_row = providers_row.push(provider_button);
+                current_row_count += 1;
+
+                if current_row_count >= max_per_row {
+                    providers_column = providers_column
+                        .push(widget::container(providers_row).center_x(Length::Fill));
+                    providers_row = widget::row().spacing(spacing().space_s);
+                    current_row_count = 0;
+                }
+            }
+
+            // Add any remaining providers in the last row
+            if current_row_count > 0 {
+                providers_column =
+                    providers_column.push(widget::container(providers_row).center_x(Length::Fill));
+            }
+
+            main_column = main_column.push(providers_column);
+        } else {
+            // No providers available message
+            let no_providers_text = widget::text(fl!("no-account-providers"))
+                .align_x(Horizontal::Center)
+                .class(cosmic::theme::Text::Default);
+
+            main_column = main_column.push(no_providers_text);
+        }
+        // Call to action
+        let cta_text = widget::text(fl!("add-account-body"))
+            .size(14)
+            .align_x(Horizontal::Center)
+            .class(cosmic::theme::Text::Default);
+
+        main_column = main_column.push(cta_text);
+
+        // Wrap in a container with proper centering
+        widget::container(main_column)
+            .center_x(Length::Fill)
+            .width(Length::Fill)
+    }
+
+    fn add_account_dialog() -> impl Into<Element<'a, Message>> {
+        // Main container
+        let mut main_column = widget::column()
+            .spacing(spacing().space_m)
+            .padding([spacing().space_m, spacing().space_xs])
+            .align_x(Alignment::Center);
+
+        // App icon and title section
+
+        // Providers section
+        if !Provider::list().is_empty() {
+            let mut providers_row = widget::row().spacing(spacing().space_s);
+            let mut current_row_count = 0;
+            let max_per_row = 3;
+            let mut providers_column = widget::column().spacing(spacing().space_xs);
+
+            for provider in &Provider::list() {
+                // Add provider icon if available
+                let provider_button = widget::row()
+                    .spacing(spacing().space_xxs)
+                    .padding(spacing().space_m)
+                    .align_y(Alignment::Center)
+                    .push(
+                        widget::image(Self::provider_icon(provider))
+                            .width(24)
+                            .height(24),
+                    )
+                    .push(widget::text(provider.to_string()))
+                    .apply(widget::button::custom)
+                    .on_press(Message::StartAuth(provider.clone()));
+
+                providers_row = providers_row.push(provider_button);
+                current_row_count += 1;
+
+                if current_row_count >= max_per_row {
+                    providers_column = providers_column
+                        .push(widget::container(providers_row).center_x(Length::Fill));
+                    providers_row = widget::row().spacing(spacing().space_s);
+                    current_row_count = 0;
+                }
+            }
+
+            // Add any remaining providers in the last row
+            if current_row_count > 0 {
+                providers_column =
+                    providers_column.push(widget::container(providers_row).center_x(Length::Fill));
+            }
+
+            main_column = main_column.push(providers_column);
+        } else {
+            // No providers available message
+            let no_providers_text = widget::text("No account providers are currently available.")
+                .align_x(Horizontal::Center)
+                .class(cosmic::theme::Text::Default);
+
+            main_column = main_column.push(no_providers_text);
         }
 
-        column
+        // Wrap in a container with proper centering
+        widget::container(main_column)
+            .center_x(Length::Fill)
+            .width(Length::Fill)
     }
 
     fn account_view(&self) -> impl Into<Element<'_, Message>> {
-        let mut settings = widget::settings::section();
+        let Some(account) = &self.selected_account else {
+            return widget::column().spacing(spacing().space_xs);
+        };
 
-        if let Some(account) = &self.selected_account {
-            let column = widget::column()
-                .padding(spacing().space_xs)
-                .spacing(spacing().space_xs)
-                .align_x(Horizontal::Center)
-                .push(
-                    widget::settings::item(
-                        format!("{} ({})", account.display_name, account.username),
-                        widget::toggler(account.enabled).on_toggle(Message::EnableAccount),
-                    )
-                    .align_y(Vertical::Center),
-                )
-                .push(
-                    widget::button::standard("Delete Account")
-                        .class(cosmic::style::Button::Destructive)
-                        .on_press(Message::DeleteAccount(account.id)),
-                );
-
-            let row = widget::row()
-                .push(widget::image(Self::provider_icon(&account.provider)).width(32))
-                .push(column);
-
-            settings = settings.add(row);
+        let mut capabilities = widget::settings::section().title(fl!("services"));
+        for (capability, enabled) in &account.capabilities {
+            capabilities = capabilities.add(widget::settings::item(
+                capability.to_string(),
+                widget::toggler(*enabled)
+                    .on_toggle(|enabled| Message::ToggleCapability(capability.clone(), enabled)),
+            ));
         }
 
-        settings
+        let account_row =
+            widget::settings::section()
+                .title(fl!("account"))
+                .add(widget::settings::flex_item_row(vec![
+                    widget::image(Self::provider_icon(&account.provider))
+                        .width(32)
+                        .into(),
+                    widget::text(format!("{} ({})", account.display_name, account.username)).into(),
+                    widget::toggler(account.enabled)
+                        .on_toggle(Message::EnableAccount)
+                        .into(),
+                ]));
+
+        widget::column()
+            .push(account_row)
+            .push(capabilities)
+            .spacing(spacing().space_xxs)
     }
 
     fn provider_icon(provider: &Provider) -> Handle {
@@ -158,11 +312,11 @@ impl<'a> cosmic::Application for AppModel {
             nav: nav_bar::Model::default(),
             key_binds: HashMap::new(),
             toasts: widget::toaster::Toasts::new(Message::CloseToast),
+            dialog_pages: VecDeque::new(),
             client: None,
             accounts: Vec::new(),
             providers: Provider::list().to_vec(),
             selected_account: None,
-            pending_account: None,
         };
 
         let tasks = vec![
@@ -175,13 +329,26 @@ impl<'a> cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        let menu_bar = menu::bar(vec![menu::Tree::with_children(
-            menu::root(fl!("view")).apply(Element::from),
-            menu::items(
-                &self.key_binds,
-                vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+        let menu_bar = menu::bar(vec![
+            menu::Tree::with_children(
+                menu::root(fl!("file")).apply(Element::from),
+                menu::items(
+                    &self.key_binds,
+                    vec![menu::Item::Button(
+                        fl!("add-account"),
+                        None,
+                        MenuAction::AddAccount,
+                    )],
+                ),
             ),
-        )]);
+            menu::Tree::with_children(
+                menu::root(fl!("view")).apply(Element::from),
+                menu::items(
+                    &self.key_binds,
+                    vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+                ),
+            ),
+        ]);
 
         vec![menu_bar.into()]
     }
@@ -189,6 +356,12 @@ impl<'a> cosmic::Application for AppModel {
     /// Enables the COSMIC application to create a nav bar with this model.
     fn nav_model(&self) -> Option<&nav_bar::Model> {
         Some(&self.nav)
+    }
+
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        let dialog_page = self.dialog_pages.front()?;
+        let dialog = dialog_page.view();
+        Some(dialog.into())
     }
 
     /// Called when a nav item is selected.
@@ -202,6 +375,16 @@ impl<'a> cosmic::Application for AppModel {
             tasks.push(self.update(Message::AccountSelected(account.clone())));
         }
         Task::batch(tasks)
+    }
+
+    fn on_escape(&mut self) -> cosmic::app::Task<Self::Message> {
+        if self.dialog_pages.pop_front().is_some() {
+            return Task::none();
+        }
+
+        self.core.window.show_context = false;
+
+        Task::none()
     }
 
     /// Display a context drawer if the context page is requested.
@@ -219,6 +402,23 @@ impl<'a> cosmic::Application for AppModel {
         })
     }
 
+    fn footer(&self) -> Option<Element<'_, Self::Message>> {
+        self.selected_account.as_ref().map(|account| {
+            widget::row()
+                .push(widget::horizontal_space())
+                .push(
+                    widget::button::standard(fl!("remove"))
+                        .class(cosmic::style::Button::Destructive)
+                        .on_press(Message::DeleteAccount(account.id)),
+                )
+                .spacing(spacing().space_xxs)
+                .apply(widget::container)
+                .class(cosmic::style::Container::Card)
+                .padding(spacing().space_xxs)
+                .into()
+        })
+    }
+
     /// Describes the interface based on the current state of the application model.
     ///
     /// Application events will be processed through the view. Any messages emitted by
@@ -227,13 +427,18 @@ impl<'a> cosmic::Application for AppModel {
         let content = if self.selected_account.is_some() {
             self.account_view().into()
         } else {
-            self.add_account_view().into()
+            self.welcome_view().into()
         };
 
         let toaster =
             widget::row::row().push(widget::toaster(&self.toasts, widget::horizontal_space()));
 
-        widget::column().push(content).push(toaster).into()
+        widget::column()
+            .push(widget::scrollable(content))
+            .push(toaster)
+            .padding(spacing().space_xxs)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Register subscriptions for this application.
@@ -349,6 +554,13 @@ impl<'a> cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
+            Message::ToggleDialog(page) => self.dialog_pages.push_back(page),
+            Message::UpdateDialog(page) => {
+                self.dialog_pages[0] = page.clone();
+            }
+            Message::CloseDialog => {
+                self.dialog_pages.pop_front();
+            }
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => {}
                 Err(err) => {
@@ -379,20 +591,16 @@ impl<'a> cosmic::Application for AppModel {
                 }
             }
             Message::EnableAccount(enable) => {
-                tracing::info!("Enabling account: {}", enable);
                 if let (Some(mut client), Some(account)) =
                     (self.client.clone(), self.selected_account.clone())
                 {
                     tasks.push(Task::perform(
                         async move {
                             client.set_account_enabled(&account.id, enable).await?;
-                            client.account_changed(&account.id).await?;
-                            Ok((account, enable))
+                            Ok(())
                         },
-                        |result: Result<(Account, bool), zbus::fdo::Error>| match result {
-                            Ok((account, enable)) => {
-                                cosmic::action::app(Message::ToggleAccount(account.id, enable))
-                            }
+                        |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(_) => cosmic::action::app(Message::LoadAccounts),
                             Err(err) => {
                                 tracing::error!("Failed to remove account: {}", err);
                                 cosmic::action::none()
@@ -401,16 +609,42 @@ impl<'a> cosmic::Application for AppModel {
                     ));
                 }
             }
-            Message::ToggleAccount(id, enable) => {
-                if let Some(account) = self.accounts.iter_mut().find(|a| a.id == id) {
-                    account.enabled = enable;
-                }
-                if let Some(account) = &mut self.selected_account {
-                    account.enabled = enable;
+            Message::ToggleCapability(capability, enabled) => {
+                if let (Some(mut client), Some(account)) =
+                    (self.client.clone(), self.selected_account.clone())
+                {
+                    tasks.push(Task::perform(
+                        async move {
+                            client
+                                .set_capability_enabled(&account.id, &capability, enabled)
+                                .await?;
+                            Ok(())
+                        },
+                        |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(_) => cosmic::action::app(Message::LoadAccounts),
+                            Err(err) => {
+                                tracing::error!("Failed to remove account: {}", err);
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
                 }
             }
             Message::AddAccount(id) => {
-                self.pending_account = Some(id);
+                let client = self.client.clone();
+                if let Some(client) = client {
+                    tasks.push(Task::perform(
+                        async move { client.get_account(&id.to_string()).await },
+                        |account| match account {
+                            Ok(account) => cosmic::action::app(Message::AccountSelected(account)),
+                            Err(err) => {
+                                tracing::error!("{err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+                tasks.push(self.update(Message::CloseDialog));
                 tasks.push(self.update(Message::LoadAccounts));
             }
             Message::DeleteAccount(account_id) => {
@@ -443,21 +677,40 @@ impl<'a> cosmic::Application for AppModel {
             }
             Message::AccountSelected(account) => self.selected_account = Some(account),
             Message::SetAccounts(accounts) => {
-                self.accounts = accounts;
-                if let Some(id) = self.pending_account
-                    && let Some(account) = self.accounts.iter().find(|a| a.id == id)
-                {
-                    self.selected_account = Some(account.clone())
-                }
-
+                self.core.nav_bar_set_toggled(!accounts.is_empty());
+                self.accounts.clear();
                 self.nav.clear();
-                for account in &self.accounts {
-                    let account = account.clone();
-                    self.nav
-                        .insert()
-                        .activate()
-                        .text(account.username.clone())
-                        .data(account);
+
+                self.accounts = accounts;
+                if let Some(selected) = self.selected_account.clone()
+                    && let Some(account) = self.accounts.iter().find(|a| a.id == selected.id)
+                {
+                    self.selected_account = Some(account.clone());
+                    for account in &self.accounts {
+                        let account = account.clone();
+
+                        if account.id == selected.id {
+                            self.nav
+                                .insert()
+                                .activate()
+                                .text(account.username.clone())
+                                .data(account);
+                        } else {
+                            self.nav
+                                .insert()
+                                .text(account.username.clone())
+                                .data(account);
+                        }
+                    }
+                } else {
+                    for account in &self.accounts {
+                        let account = account.clone();
+
+                        self.nav
+                            .insert()
+                            .text(account.username.clone())
+                            .data(account);
+                    }
                 }
             }
             Message::CreateClient => {
@@ -572,6 +825,7 @@ pub enum ContextPage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     About,
+    AddAccount,
 }
 
 impl menu::action::MenuAction for MenuAction {
@@ -580,6 +834,24 @@ impl menu::action::MenuAction for MenuAction {
     fn message(&self) -> Self::Message {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
+            MenuAction::AddAccount => Message::ToggleDialog(DialogPage::AddAccount),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DialogPage {
+    AddAccount,
+}
+
+impl<'a> DialogPage {
+    fn view(&self) -> impl Into<Element<'_, Message>> {
+        match self {
+            DialogPage::AddAccount => widget::dialog()
+                .title(fl!("add-account-title"))
+                .body(fl!("add-account-body"))
+                .primary_action(widget::button::text(fl!("close")).on_press(Message::CloseDialog))
+                .control(AppModel::add_account_dialog()),
         }
     }
 }

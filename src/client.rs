@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
-    models::{Account, Provider},
+    models::{Account, Capability, Provider},
     proxy::{
         AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
         CosmicAccountsProxy,
@@ -56,9 +56,22 @@ impl CosmicAccountsClient {
     }
 
     pub async fn set_account_enabled(&mut self, id: &Uuid, enabled: bool) -> Result<()> {
+        let id = id.to_string();
+        self.proxy.set_account_enabled(&id, enabled).await?;
+        self.proxy.emit_account_changed(&id).await
+    }
+
+    pub async fn set_capability_enabled(
+        &mut self,
+        id: &Uuid,
+        capability: &Capability,
+        enabled: bool,
+    ) -> Result<()> {
+        let id = id.to_string();
         self.proxy
-            .set_account_enabled(&id.to_string(), enabled)
-            .await
+            .set_capability_enabled(&id, &capability.to_string(), enabled)
+            .await?;
+        self.proxy.emit_account_changed(&id).await
     }
 
     /// Signals

@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct Account {
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: BTreeMap<Capability, bool>,
 }
 
 use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
@@ -32,7 +32,7 @@ pub struct DbusAccount {
     pub enabled: bool,
     pub created_at: String,
     pub last_used: Option<String>,
-    pub capabilities: Vec<String>,
+    pub capabilities: BTreeMap<String, bool>,
 }
 
 impl From<Account> for DbusAccount {
@@ -52,7 +52,7 @@ impl From<Account> for DbusAccount {
             capabilities: value
                 .capabilities
                 .iter()
-                .map(|capability| capability.to_string())
+                .map(|(capability, enabled)| (capability.to_string(), *enabled))
                 .collect(),
         }
     }
@@ -75,7 +75,7 @@ impl From<&Account> for DbusAccount {
             capabilities: value
                 .capabilities
                 .iter()
-                .map(|capability| capability.to_string())
+                .map(|(capability, enabled)| (capability.to_string(), *enabled))
                 .collect(),
         }
     }
@@ -95,7 +95,11 @@ impl From<DbusAccount> for Account {
                 .last_used
                 .map(|lu| DateTime::from_str(&lu).ok())
                 .unwrap(),
-            capabilities: value.capabilities.into_iter().map(Into::into).collect(),
+            capabilities: value
+                .capabilities
+                .into_iter()
+                .map(|(capability, enabled)| (Capability::from_str(capability).unwrap(), enabled))
+                .collect(),
         }
     }
 }

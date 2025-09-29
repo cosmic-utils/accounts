@@ -143,7 +143,7 @@ impl AuthManager {
             enabled: true,
             created_at: Utc::now(),
             last_used: Some(Utc::now()),
-            capabilities: vec![],
+            capabilities: provider.capabilities(),
         };
 
         self.storage

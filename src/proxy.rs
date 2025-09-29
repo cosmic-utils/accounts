@@ -19,6 +19,12 @@ pub trait CosmicAccounts {
     ) -> Result<String>;
     async fn remove_account(&mut self, id: &str) -> Result<()>;
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
+    async fn set_capability_enabled(
+        &mut self,
+        id: &str,
+        capability: &str,
+        enabled: bool,
+    ) -> Result<()>;
     async fn get_access_token(&mut self, id: &str) -> Result<String>;
 
     async fn emit_account_added(&self, account_id: &str) -> Result<()>;

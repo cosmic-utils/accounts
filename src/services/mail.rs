@@ -161,7 +161,7 @@ impl Service for MailService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.capabilities.contains(&Capability::Email)
+        account.capabilities.contains_key(&Capability::Email)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {

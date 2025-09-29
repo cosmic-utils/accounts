@@ -30,7 +30,11 @@ impl CosmicAccountsConfig {
 
     pub fn save_account(&mut self, account: &Account) -> Result<(), Error> {
         let mut accounts = self.accounts.clone();
-        accounts.push(account.clone());
+        if let Some(existing) = accounts.iter_mut().find(|a| a.id == account.id) {
+            existing.clone_from(&account);
+        } else {
+            accounts.push(account.clone());
+        }
         if let Some(handler) = Self::config_handler() {
             self.set_accounts(&handler, accounts)?;
         } else {

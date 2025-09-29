@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord, PartialEq)]
 pub enum Capability {
     Email,
     Calendar,
@@ -10,14 +10,14 @@ pub enum Capability {
     Todo,
 }
 
-impl From<String> for Capability {
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "Email" => Capability::Email,
-            "Calendar" => Capability::Calendar,
-            "Contacts" => Capability::Contacts,
-            "Todo" => Capability::Todo,
-            capability => panic!("Invalid capability: {}", capability),
+impl Capability {
+    pub fn from_str(value: String) -> Option<Self> {
+        match value.to_lowercase().as_str() {
+            "email" => Some(Capability::Email),
+            "calendar" => Some(Capability::Calendar),
+            "contacts" => Some(Capability::Contacts),
+            "todo" => Some(Capability::Todo),
+            _ => None,
         }
     }
 }

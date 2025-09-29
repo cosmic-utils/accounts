@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +25,19 @@ impl Provider {
         match self {
             Provider::Google => "google.toml",
             Provider::Microsoft => "microsoft.toml",
+        }
+    }
+
+    pub fn capabilities(&self) -> BTreeMap<super::Capability, bool> {
+        match self {
+            Provider::Google => BTreeMap::from([
+                (super::Capability::Email, false),
+                (super::Capability::Calendar, false),
+            ]),
+            Provider::Microsoft => BTreeMap::from([
+                (super::Capability::Email, false),
+                (super::Capability::Calendar, false),
+            ]),
         }
     }
 }
