@@ -10,8 +10,10 @@ use oauth2::{
 use reqwest;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use uuid::Uuid;
 
+use crate::models::AccountProviderConfig;
 use crate::{error::*, models::ProviderConfig, storage::CredentialStorage};
 
 pub struct AuthManager {
@@ -23,16 +25,23 @@ pub struct AuthManager {
 
 impl AuthManager {
     pub async fn new() -> Result<Self> {
+        let mut configs = HashMap::new();
+
+        for provider in Provider::list() {
+            let config_path = Path::new("data/providers").join(provider.file_name());
+            if config_path.exists() {
+                let content = std::fs::read_to_string(config_path)?;
+                let toml_config: AccountProviderConfig = toml::from_str(&content)?;
+                configs.insert(provider.clone(), toml_config.provider);
+            }
+        }
+
         Ok(Self {
-            configs: HashMap::new(),
+            configs,
             pending_auth: HashMap::new(),
             storage: CredentialStorage::new().await?,
             config: CosmicAccountsConfig::config(),
         })
-    }
-
-    pub fn add_provider_config(&mut self, provider: Provider, config: ProviderConfig) {
-        self.configs.insert(provider.clone(), config);
     }
 
     pub async fn start_auth_flow(&mut self, provider: Provider) -> Result<String> {
@@ -251,6 +260,15 @@ impl AuthManager {
             }
         }
         Ok(())
+    }
+
+    pub async fn delete_credentials(&self, id: &Uuid) -> Result<()> {
+        self.storage.delete_account_credentials(id).await?;
+        Ok(())
+    }
+
+    pub async fn get_account_credentials(&self, id: &Uuid) -> Result<Credential> {
+        self.storage.get_account_credentials(id).await
     }
 }
 

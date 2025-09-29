@@ -20,6 +20,13 @@ impl Provider {
     pub fn list() -> [Self; 2] {
         [Self::Google, Self::Microsoft]
     }
+
+    pub fn file_name(&self) -> &str {
+        match self {
+            Provider::Google => "google.toml",
+            Provider::Microsoft => "microsoft.toml",
+        }
+    }
 }
 
 impl Display for Provider {

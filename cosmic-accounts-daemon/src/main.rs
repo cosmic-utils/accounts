@@ -30,8 +30,7 @@ async fn main() -> Result<()> {
 
     info!("Starting COSMIC Accounts daemon with integrated HTTP server...");
 
-    let mut accounts = CosmicAccounts::new().await?;
-    accounts.setup_providers().await?;
+    let accounts = CosmicAccounts::new().await?;
 
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
