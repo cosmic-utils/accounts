@@ -4,26 +4,26 @@ use crate::{
     models::{Account, Capability, Provider},
     proxy::{
         AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
-        CosmicAccountsProxy,
+        AccountsProxy,
     },
 };
 use uuid::Uuid;
 use zbus::{fdo::Result, Connection};
 
 #[derive(Debug, Clone)]
-pub struct CosmicAccountsClient {
-    proxy: CosmicAccountsProxy<'static>,
+pub struct AccountsClient {
+    proxy: AccountsProxy<'static>,
 }
 
-impl<'a> CosmicAccountsClient {
+impl<'a> AccountsClient {
     pub async fn new() -> Result<Self> {
         let connection = Connection::session().await?;
-        let proxy = CosmicAccountsProxy::new(&connection).await?;
+        let proxy = AccountsProxy::new(&connection).await?;
         Ok(Self { proxy })
     }
 }
 
-impl CosmicAccountsClient {
+impl AccountsClient {
     pub async fn list_accounts(&self) -> Result<Vec<Account>> {
         self.proxy
             .list_accounts()

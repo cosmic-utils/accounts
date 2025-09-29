@@ -4,11 +4,11 @@ use zbus::proxy;
 use crate::models::DbusAccount;
 
 #[proxy(
-    interface = "dev.edfloreshz.CosmicAccounts",
-    default_path = "/com/system76/CosmicAccounts",
-    default_service = "dev.edfloreshz.CosmicAccounts"
+    interface = "dev.edfloreshz.Accounts",
+    default_path = "/dev/edfloreshz/Accounts",
+    default_service = "dev.edfloreshz.Accounts"
 )]
-pub trait CosmicAccounts {
+pub trait Accounts {
     async fn list_accounts(&self) -> Result<Vec<DbusAccount>>;
     async fn get_account(&self, id: &str) -> Result<DbusAccount>;
     async fn start_authentication(&mut self, provider_name: &str) -> Result<String>;

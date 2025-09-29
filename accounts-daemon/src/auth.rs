@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
-use cosmic_accounts::models::{Account, Credential, Provider};
-use cosmic_accounts::CosmicAccountsConfig;
+use accounts::models::{Account, Credential, Provider};
+use accounts::AccountsConfig;
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -20,7 +20,7 @@ pub struct AuthManager {
     configs: HashMap<Provider, ProviderConfig>,
     pending_auth: HashMap<String, (Provider, PkceCodeVerifier)>,
     storage: CredentialStorage,
-    config: CosmicAccountsConfig,
+    config: AccountsConfig,
 }
 
 impl AuthManager {
@@ -40,7 +40,7 @@ impl AuthManager {
             configs,
             pending_auth: HashMap::new(),
             storage: CredentialStorage::new().await?,
-            config: CosmicAccountsConfig::config(),
+            config: AccountsConfig::config(),
         })
     }
 

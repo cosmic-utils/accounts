@@ -1,12 +1,12 @@
-use crate::accounts::CosmicAccounts;
+use crate::account::AccountsInterface;
+use accounts::AccountsClient;
 use axum::{extract::Query, http::StatusCode, response::Html, routing::get, Router};
-use cosmic_accounts::CosmicAccountsClient;
 use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber;
 use zbus::connection;
 
-mod accounts;
+mod account;
 mod auth;
 mod error;
 mod models;
@@ -28,9 +28,9 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    info!("Starting COSMIC Accounts daemon with integrated HTTP server...");
+    info!("Starting Accounts for COSMIC daemon with integrated HTTP server...");
 
-    let accounts = CosmicAccounts::new().await?;
+    let accounts = AccountsInterface::new().await?;
 
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
@@ -42,15 +42,15 @@ async fn main() -> Result<()> {
 
     info!("Setting up D-Bus connection...");
     let _conn = connection::Builder::session()?
-        .name("dev.edfloreshz.CosmicAccounts")?
-        .serve_at("/com/system76/CosmicAccounts", accounts)?
+        .name("dev.edfloreshz.Accounts")?
+        .serve_at("/dev/edfloreshz/Accounts", accounts)?
         .build()
         .await?;
 
-    info!("D-Bus service started on: dev.edfloreshz.CosmicAccounts");
-    info!("Object path: /com/system76/CosmicAccounts");
+    info!("D-Bus service started on: dev.edfloreshz.Accounts");
+    info!("Object path: /dev/edfloreshz/Accounts");
 
-    info!("COSMIC Accounts daemon started successfully");
+    info!("Accounts for COSMIC daemon started successfully");
 
     axum::serve(listener, router).await.unwrap();
 
@@ -60,10 +60,10 @@ async fn main() -> Result<()> {
 async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Html<String>) {
     info!("Received OAuth callback: {:?}", params);
 
-    let Ok(mut client) = CosmicAccountsClient::new().await else {
+    let Ok(mut client) = AccountsClient::new().await else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Html("Cosmic Accounts Client failed to initialize".to_string()),
+            Html("Accounts for COSMIC Client failed to initialize".to_string()),
         );
     };
 

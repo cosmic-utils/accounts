@@ -1,10 +1,10 @@
 [package]
 edition = "2021"
-name = "cosmic-accounts"
+name = "accounts"
 version = "0.1.0"
 authors = ["Eduardo Flores <edfloreshz@gmail.com>"]
-description = "COSMIC online account management service"
-repository = "https://github.com/cosmic-utils/cosmic-accounts"
+description = "Online account management service for the COSMIC desktop."
+repository = "https://github.com/cosmic-utils/accounts"
 
 [dependencies]
 async-trait = "0.1.89"
@@ -44,8 +44,8 @@ workspace = true
 
 [workspace]
 members = [
-    "cosmic-accounts-daemon",
-    "cosmic-accounts-ui",
+    "accounts-daemon",
+    "accounts-ui",
 ]
 
 [workspace.dependencies]

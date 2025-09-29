@@ -1,18 +1,18 @@
 use crate::{auth::AuthManager, Error};
-use cosmic_accounts::{
+use accounts::{
     models::{Capability, DbusAccount, Provider},
-    CosmicAccountsConfig,
+    AccountsConfig,
 };
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, object_server::SignalEmitter};
 
-pub struct CosmicAccounts {
+pub struct AccountsInterface {
     auth_manager: AuthManager,
-    config: CosmicAccountsConfig,
+    config: AccountsConfig,
 }
 
-#[interface(name = "dev.edfloreshz.CosmicAccounts")]
-impl CosmicAccounts {
+#[interface(name = "dev.edfloreshz.Accounts")]
+impl AccountsInterface {
     /// List all accounts
     async fn list_accounts(&self) -> Vec<DbusAccount> {
         self.config.accounts.iter().map(Into::into).collect()
@@ -211,11 +211,11 @@ impl CosmicAccounts {
     async fn account_exists(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
-impl CosmicAccounts {
+impl AccountsInterface {
     pub async fn new() -> crate::Result<Self> {
         Ok(Self {
             auth_manager: AuthManager::new().await?,
-            config: CosmicAccountsConfig::config(),
+            config: AccountsConfig::config(),
         })
     }
 }

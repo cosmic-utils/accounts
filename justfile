@@ -1,4 +1,4 @@
-# COSMIC Accounts - Build and Installation Commands
+# Accounts for COSMIC - Build and Installation Commands
 
 # Default recipe - show available commands
 default:
@@ -14,11 +14,11 @@ build-lib:
 
 # Build the daemon
 build-daemon:
-    cargo build --release -p cosmic-accounts-daemon
+    cargo build --release -p accounts-daemon
 
 # Build the GUI (may fail if dependencies aren't available)
 build-gui:
-    cargo build --release -p cosmic-accounts-gui
+    cargo build --release -p accounts-ui
 
 # Run all tests
 test:
@@ -46,46 +46,46 @@ clean:
 
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
-    sudo cp target/release/cosmic-accounts-daemon /usr/bin/
-    sudo cp data/cosmic-accounts.service /usr/share/dbus-1/services/
+    sudo cp target/release/accounts-daemon /usr/bin/
+    sudo cp data/accounts.service /usr/share/dbus-1/services/
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
-    sudo cp target/release/cosmic-accounts-gui /usr/bin/
+    sudo cp target/release/accounts-ui /usr/bin/
 
 # Install provider configurations (requires sudo)
 install-configs:
-    sudo mkdir -p /etc/cosmic-accounts/providers
-    sudo cp data/providers/*.toml /etc/cosmic-accounts/providers/
-    @echo "Remember to update OAuth2 credentials in /etc/cosmic-accounts/providers/"
+    sudo mkdir -p /etc/accounts/providers
+    sudo cp data/providers/*.toml /etc/accounts/providers/
+    @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
 install: build install-daemon install-gui install-configs
 
 # Uninstall system files (requires sudo)
 uninstall:
-    sudo rm -f /usr/bin/cosmic-accounts-daemon
-    sudo rm -f /usr/bin/cosmic-accounts-gui
-    sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
-    sudo rm -rf /etc/cosmic-accounts
+    sudo rm -f /usr/bin/accounts-daemon
+    sudo rm -f /usr/bin/accounts-ui
+    sudo rm -f /usr/share/dbus-1/services/accounts.service
+    sudo rm -rf /etc/accounts
 
 # Start the daemon service (user session)
 start-daemon:
-    systemctl --user enable cosmic-accounts.service
-    systemctl --user start cosmic-accounts.service
+    systemctl --user enable accounts.service
+    systemctl --user start accounts.service
 
 # Stop the daemon service (user session)
 stop-daemon:
-    systemctl --user stop cosmic-accounts.service
-    systemctl --user disable cosmic-accounts.service
+    systemctl --user stop accounts.service
+    systemctl --user disable accounts.service
 
 # Check daemon status
 status:
-    systemctl --user status cosmic-accounts.service
+    systemctl --user status accounts.service
 
 # View daemon logs
 logs:
-    journalctl --user -u cosmic-accounts.service -f
+    journalctl --user -u accounts.service -f
 
 # Run CLI tool with list command
 cli-list:
@@ -134,7 +134,7 @@ example-show-accounts:
 
 # Development: quick check without running tests
 quick-check:
-    cargo check --workspace --exclude cosmic-accounts-gui
+    cargo check --workspace --exclude accounts-ui
 
 # Development: full workspace build check
 workspace-check:
@@ -143,12 +143,12 @@ workspace-check:
 # Package for distribution (creates release builds and archives)
 package: clean build
     mkdir -p dist
-    cp target/release/cosmic-accounts-daemon dist/
-    cp target/release/cosmic-accounts-gui dist/ || echo "GUI build failed, skipping"
+    cp target/release/accounts-daemon dist/
+    cp target/release/accounts-ui dist/ || echo "GUI build failed, skipping"
     cp -r data dist/
     cp README.md dist/
     cp LICENSE* dist/ || echo "No license files found"
-    tar czf dist/cosmic-accounts-$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "cosmic-accounts") | .version').tar.gz -C dist .
+    tar czf dist/accounts-$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "accounts") | .version').tar.gz -C dist .
 
 # Development: run daemon and CLI in separate terminals
 dev-split:

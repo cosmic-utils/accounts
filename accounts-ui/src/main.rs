@@ -21,7 +21,7 @@ fn main() -> cosmic::iced::Result {
 
     if std::env::var("RUST_LOG").is_err() {
         unsafe {
-            std::env::set_var("RUST_LOG", "cosmic_accounts_ui=info");
+            std::env::set_var("RUST_LOG", "accounts_ui=info");
         }
     }
     tracing_subscriber::registry()

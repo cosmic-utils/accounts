@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::fl;
+use accounts::models::{Account, Capability, Provider};
+use accounts::{AccountsClient, Uuid, zbus};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::{Alignment, Length, Subscription, stream};
@@ -9,8 +11,6 @@ use cosmic::theme::spacing;
 use cosmic::widget::image::Handle;
 use cosmic::widget::{self, ToastId, menu, nav_bar};
 use cosmic::{cosmic_theme, theme};
-use cosmic_accounts::models::{Account, Capability, Provider};
-use cosmic_accounts::{CosmicAccountsClient, Uuid, zbus};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::{HashMap, VecDeque};
 
@@ -32,8 +32,8 @@ pub struct AppModel {
     dialog_pages: VecDeque<DialogPage>,
     /// Toasts for the application.
     toasts: widget::Toasts<Message>,
-    /// Client for interacting with the Cosmic Accounts API.
-    client: Option<CosmicAccountsClient>,
+    /// Client for interacting with the Accounts for COSMIC API.
+    client: Option<AccountsClient>,
     // Accounts data.
     accounts: Vec<Account>,
     // Providers list.
@@ -67,7 +67,7 @@ pub enum Message {
     AccountExists,
     // Client
     CreateClient,
-    SetClient(Option<CosmicAccountsClient>),
+    SetClient(Option<AccountsClient>),
     // Auth
     StartAuth(Provider),
 }
@@ -291,7 +291,7 @@ impl<'a> cosmic::Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "dev.edfloreshz.CosmicAccounts";
+    const APP_ID: &'static str = "dev.edfloreshz.Accounts";
 
     fn core(&self) -> &cosmic::Core {
         &self.core
@@ -717,7 +717,7 @@ impl<'a> cosmic::Application for AppModel {
             Message::CreateClient => {
                 tasks.push(Task::perform(
                     async {
-                        match CosmicAccountsClient::new().await {
+                        match AccountsClient::new().await {
                             Ok(client) => Some(client),
                             Err(err) => {
                                 tracing::error!("{err}");
