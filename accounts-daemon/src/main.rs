@@ -10,6 +10,7 @@ mod account;
 mod auth;
 mod error;
 mod models;
+mod services;
 mod storage;
 
 pub use error::{Error, Result};
