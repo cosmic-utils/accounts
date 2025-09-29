@@ -1,6 +1,6 @@
 <div align="center">
   <br>
-  <h1>COSMIC Accounts</h1>
+  <h1>Accounts for COSMIC™</h1>
 
   <p>A comprehensive online account management system for the COSMIC desktop environment</p>
 
