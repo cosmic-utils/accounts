@@ -22,6 +22,7 @@ reqwest = { workspace = true }
 cosmic-config = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
+async-trait = "0.1.89"
 
 [[bin]]
 name = "accounts-daemon"
