@@ -16,7 +16,7 @@
 - D-Bus client proxy for communication
 
 **`cosmic-accounts-daemon/`**
-- D-Bus service implementation (`com.system76.CosmicAccounts`)
+- D-Bus service implementation (`dev.edfloreshz.CosmicAccounts`)
 - OAuth2 authentication manager
 - Secure credential storage
 - Provider configuration management
