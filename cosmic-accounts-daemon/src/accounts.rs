@@ -1,22 +1,14 @@
-use crate::{
-    auth::AuthManager,
-    models::{AccountProviderConfig, ProviderConfig},
-    storage::CredentialStorage,
-    Error,
-};
+use crate::{auth::AuthManager, Error};
 use cosmic_accounts::{
     models::{DbusAccount, Provider},
     CosmicAccountsConfig,
 };
-use std::fs;
-use std::path::Path;
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, object_server::SignalEmitter};
 
 pub struct CosmicAccounts {
-    storage: CredentialStorage,
-    config: CosmicAccountsConfig,
     auth_manager: AuthManager,
+    config: CosmicAccountsConfig,
 }
 
 #[interface(name = "com.system76.CosmicAccounts")]
@@ -88,17 +80,16 @@ impl CosmicAccounts {
 
     /// Remove an account
     async fn remove_account(&mut self, id: &str) -> Result<()> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let id = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
-        match self.config.remove_account(&uuid) {
-            Ok(_) => {
-                // Note: Signal emission would be handled by the D-Bus framework
-                Ok(())
-            }
-            Err(err) => {
-                Err(Error::AccountNotRemoved(format!("Account {id} not removed: {}", err)).into())
-            }
-        }
+        self.config
+            .remove_account(&id)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Account {id} not removed: {}", e)))?;
+        self.auth_manager
+            .delete_credentials(&id)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        Ok(())
     }
 
     /// Enable or disable an account
@@ -138,7 +129,7 @@ impl CosmicAccounts {
         match self.config.get_account(&uuid) {
             Some(account) => {
                 let credentials = self
-                    .storage
+                    .auth_manager
                     .get_account_credentials(&account.id)
                     .await
                     .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
@@ -204,62 +195,8 @@ impl CosmicAccounts {
 impl CosmicAccounts {
     pub async fn new() -> crate::Result<Self> {
         Ok(Self {
-            storage: CredentialStorage::new().await?,
             auth_manager: AuthManager::new().await?,
             config: CosmicAccountsConfig::config(),
-        })
-    }
-
-    pub async fn setup_providers(&mut self) -> Result<()> {
-        let providers_dir = Path::new("data/providers");
-
-        if !providers_dir.exists() {
-            return Ok(());
-        }
-
-        let provider_files = [
-            ("google.toml", Provider::Google),
-            ("microsoft.toml", Provider::Microsoft),
-        ];
-
-        for (filename, provider) in provider_files.iter() {
-            let config_path = providers_dir.join(filename);
-
-            if config_path.exists() {
-                match self.load_provider_config(&config_path, provider.clone()) {
-                    Ok(config) => {
-                        self.auth_manager
-                            .add_provider_config(provider.clone(), config);
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Failed to load provider config for {}: {}",
-                            provider.to_string(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn load_provider_config(
-        &self,
-        config_path: &Path,
-        _provider: Provider,
-    ) -> crate::Result<ProviderConfig> {
-        let content = fs::read_to_string(config_path)?;
-        let toml_config: AccountProviderConfig = toml::from_str(&content)?;
-
-        Ok(ProviderConfig {
-            client_id: toml_config.provider.client_id,
-            client_secret: toml_config.provider.client_secret,
-            auth_url: toml_config.provider.auth_url,
-            token_url: toml_config.provider.token_url,
-            redirect_uri: toml_config.provider.redirect_uri,
-            scopes: toml_config.provider.scopes,
         })
     }
 }

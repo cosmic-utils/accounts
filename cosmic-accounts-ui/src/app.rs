@@ -3,14 +3,14 @@
 use crate::fl;
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{stream, Alignment, Subscription};
+use cosmic::iced::{Alignment, Subscription, stream};
 use cosmic::prelude::*;
 use cosmic::theme::spacing;
 use cosmic::widget::image::Handle;
-use cosmic::widget::{self, menu, nav_bar, ToastId};
+use cosmic::widget::{self, ToastId, menu, nav_bar};
 use cosmic::{cosmic_theme, theme};
 use cosmic_accounts::models::{Account, Provider};
-use cosmic_accounts::{zbus, CosmicAccountsClient, Uuid};
+use cosmic_accounts::{CosmicAccountsClient, Uuid, zbus};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 
@@ -36,6 +36,7 @@ pub struct AppModel {
     // Providers list.
     providers: Vec<Provider>,
     selected_account: Option<Account>,
+    pending_account: Option<Uuid>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -50,6 +51,7 @@ pub enum Message {
     CloseToast(ToastId),
     // Accounts
     LoadAccounts,
+    AddAccount(Uuid),
     DeleteAccount(Uuid),
     RemoveAccount(Uuid),
     EnableAccount(bool),
@@ -160,6 +162,7 @@ impl<'a> cosmic::Application for AppModel {
             accounts: Vec::new(),
             providers: Provider::list().to_vec(),
             selected_account: None,
+            pending_account: None,
         };
 
         let tasks = vec![
@@ -262,8 +265,15 @@ impl<'a> cosmic::Application for AppModel {
                 "account_added",
                 stream::channel(1, move |mut output| async move {
                     if let Ok(mut account_added_stream) = client.receive_account_added().await {
-                        while let Some(_) = account_added_stream.next().await {
-                            if let Err(err) = output.send(Message::LoadAccounts).await {
+                        while let Some(account_added) = account_added_stream.next().await {
+                            let args = account_added.args().expect("Error parsing arguments");
+                            if let Err(err) = output
+                                .send(Message::AddAccount(
+                                    Uuid::parse_str(args.account_id())
+                                        .expect("Expected account id to be UUID"),
+                                ))
+                                .await
+                            {
                                 tracing::warn!("failed to send message from subscription: {}", err);
                             }
                         }
@@ -399,6 +409,10 @@ impl<'a> cosmic::Application for AppModel {
                     account.enabled = enable;
                 }
             }
+            Message::AddAccount(id) => {
+                self.pending_account = Some(id);
+                tasks.push(self.update(Message::LoadAccounts));
+            }
             Message::DeleteAccount(account_id) => {
                 tracing::info!("Removing account: {}", account_id);
                 if let Some(mut client) = self.client.clone() {
@@ -422,6 +436,7 @@ impl<'a> cosmic::Application for AppModel {
             }
             Message::RemoveAccount(account_id) => {
                 self.accounts.retain(|account| account.id != account_id);
+                self.selected_account = None;
             }
             Message::AccountExists => {
                 tasks.push(self.update(Message::ShowToast(fl!("account-exists"))));
@@ -429,11 +444,18 @@ impl<'a> cosmic::Application for AppModel {
             Message::AccountSelected(account) => self.selected_account = Some(account),
             Message::SetAccounts(accounts) => {
                 self.accounts = accounts;
+                if let Some(id) = self.pending_account
+                    && let Some(account) = self.accounts.iter().find(|a| a.id == id)
+                {
+                    self.selected_account = Some(account.clone())
+                }
+
                 self.nav.clear();
                 for account in &self.accounts {
                     let account = account.clone();
                     self.nav
                         .insert()
+                        .activate()
                         .text(account.username.clone())
                         .data(account);
                 }
@@ -470,7 +492,8 @@ impl<'a> cosmic::Application for AppModel {
                 tasks.push(Task::perform(
                     async move {
                         let url = client.start_authentication(&provider).await?;
-                        open::that(url).map_err(|e| zbus::Error::Failure(e.to_string()))?;
+                        open::that_detached(url)
+                            .map_err(|e| zbus::Error::Failure(e.to_string()))?;
                         Ok(())
                     },
                     |result: Result<(), zbus::Error>| match result {
