@@ -1,6 +1,6 @@
 use crate::{auth::AuthManager, Error};
 use cosmic_accounts::{
-    models::{DbusAccount, Provider},
+    models::{Capability, DbusAccount, Provider},
     CosmicAccountsConfig,
 };
 use uuid::Uuid;
@@ -110,6 +110,25 @@ impl CosmicAccounts {
             }
             None => Err(Error::AccountNotFound(id.to_string()).into()),
         }
+    }
+
+    async fn set_capability_enabled(
+        &mut self,
+        id: &str,
+        capability: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let Some(mut account) = self.config.get_account(&uuid) else {
+            return Err(Error::AccountNotFound(id.to_string()).into());
+        };
+        if let Some(capability) = Capability::from_str(capability.to_string()) {
+            account.capabilities.insert(capability, enabled);
+        }
+        self.config
+            .save_account(&account)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        Ok(())
     }
 
     async fn ensure_credentials(&mut self) -> Result<()> {

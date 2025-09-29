@@ -10,15 +10,15 @@ impl ServiceFactory {
         let mut services: Vec<Box<dyn Service>> = Vec::new();
         let account_id = account.id.to_string();
 
-        if account.capabilities.contains(&Capability::Email) {
+        if account.capabilities.contains_key(&Capability::Email) {
             services.push(Box::new(MailService::new(account_id.clone())));
         }
 
-        if account.capabilities.contains(&Capability::Calendar) {
+        if account.capabilities.contains_key(&Capability::Calendar) {
             services.push(Box::new(CalendarService::new(account_id.clone())));
         }
 
-        if account.capabilities.contains(&Capability::Contacts) {
+        if account.capabilities.contains_key(&Capability::Contacts) {
             services.push(Box::new(ContactsService::new(account_id.clone())));
         }
 
