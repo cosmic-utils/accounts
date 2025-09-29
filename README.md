@@ -1,6 +1,13 @@
-# COSMIC Accounts
+<div align="center">
+  <br>
+  <h1>COSMIC Accounts</h1>
 
-A comprehensive online account management system for the COSMIC desktop environment, providing secure OAuth2 authentication and credential management for various online services.
+  <p>A comprehensive online account management system for the COSMIC desktop environment</p>
+
+  ![window-light.png](https://raw.githubusercontent.com/cosmic-utils/cosmic-accounts/refs/heads/main/cosmic-accounts-ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
+  ![window-dark.png](https://raw.githubusercontent.com/cosmic-utils/cosmic-accounts/refs/heads/main/cosmic-accounts-ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
+</div>
+
 
 ## Components
 **`cosmic-accounts/` (Core Library)**
