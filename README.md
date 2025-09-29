@@ -4,25 +4,25 @@
 
   <p>A comprehensive online account management system for the COSMIC desktop environment</p>
 
-  ![window-light.png](https://raw.githubusercontent.com/cosmic-utils/cosmic-accounts/refs/heads/main/cosmic-accounts-ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
-  ![window-dark.png](https://raw.githubusercontent.com/cosmic-utils/cosmic-accounts/refs/heads/main/cosmic-accounts-ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
+  ![window-light.png](https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
+  ![window-dark.png](https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
 </div>
 
 
 ## Components
-**`cosmic-accounts/` (Core Library)**
+**`accounts/` (Core Library)**
 - `Account`, `Provider`, and `Credential` models
 - Service abstraction layer for different capabilities
 - D-Bus client proxy for communication
 
-**`cosmic-accounts-daemon/`**
-- D-Bus service implementation (`dev.edfloreshz.CosmicAccounts`)
+**`accounts-daemon/`**
+- D-Bus service implementation (`dev.edfloreshz.Accounts`)
 - OAuth2 authentication manager
 - Secure credential storage
 - Provider configuration management
 - Integrated HTTP callback server
 
-**`cosmic-accounts-gui/`**
+**`accounts-ui/`**
 - COSMIC desktop application
 - Account listing and management
 - Provider selection and authentication flow
@@ -58,6 +58,6 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 
 ## Support
 
-- [GitHub Issues](https://github.com/cosmic-utils/cosmic-accounts/issues)
+- [GitHub Issues](https://github.com/cosmic-utils/accounts/issues)
 - [COSMIC Discord](https://discord.gg/cosmic-desktop)
 - [System76 Community](https://chat.pop-os.org/)

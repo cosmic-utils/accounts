@@ -1,4 +1,4 @@
-app-title = COSMIC Accounts
+app-title = Accounts for COSMIC
 page-id = Page { $num }
 git-description = Git commit {$hash} on {$date}
 

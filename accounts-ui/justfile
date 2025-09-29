@@ -1,5 +1,5 @@
-name := 'cosmic-accounts-ui'
-appid := 'dev.edfloreshz.CosmicAccounts'
+name := 'accounts-ui'
+appid := 'dev.edfloreshz.Accounts'
 
 rootdir := ''
 prefix := '/usr'
@@ -93,4 +93,3 @@ vendor:
 vendor-extract:
     rm -rf vendor
     tar pxf vendor.tar
-

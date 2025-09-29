@@ -1,10 +1,10 @@
 [package]
-name = "cosmic-accounts-ui"
+name = "accounts-ui"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "An account management application for the COSMIC desktop."
-repository = "https://github.com/cosmic-utils/cosmic-accounts"
+repository = "https://github.com/cosmic-utils/accounts"
 
 [build-dependencies]
 vergen = { version = "8", features = ["git", "gitcl"] }
@@ -17,7 +17,7 @@ rust-embed = "8.5.0"
 tokio = { version = "1.41.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features= ["env-filter"]}
-cosmic-accounts = { path = ".." }
+accounts = { path = ".." }
 
 [dependencies.i18n-embed]
 version = "0.15"

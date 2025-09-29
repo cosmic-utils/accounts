@@ -1,11 +1,11 @@
 [package]
-name = "cosmic-accounts-daemon"
+name = "accounts-daemon"
 version = "0.1.0"
 edition = "2021"
-description = "COSMIC Online Accounts daemon service"
+description = "Online accounts for COSMIC daemon service"
 
 [dependencies]
-cosmic-accounts = { path = ".." }
+accounts = { path = ".." }
 zbus = { workspace = true }
 axum = "0.8.4"
 serde = { workspace = true }
@@ -24,5 +24,5 @@ thiserror = { workspace = true }
 url = { workspace = true }
 
 [[bin]]
-name = "cosmic-accounts-daemon"
+name = "accounts-daemon"
 path = "src/main.rs"

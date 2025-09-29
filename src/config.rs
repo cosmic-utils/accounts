@@ -8,23 +8,24 @@ use uuid::Uuid;
 pub const CONFIG_VERSION: u64 = 1;
 
 #[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize, CosmicConfigEntry)]
-pub struct CosmicAccountsConfig {
+pub struct AccountsConfig {
     pub accounts: Vec<Account>,
 }
 
-impl CosmicAccountsConfig {
+impl AccountsConfig {
     pub fn config_handler() -> Option<Config> {
-        Config::new("dev.edfloreshz.CosmicAccountsDaemon", CONFIG_VERSION).ok()
+        Config::new("dev.edfloreshz.AccountsDaemon", CONFIG_VERSION).ok()
     }
 
-    pub fn config() -> CosmicAccountsConfig {
+    pub fn config() -> AccountsConfig {
         match Self::config_handler() {
-            Some(config_handler) => CosmicAccountsConfig::get_entry(&config_handler)
-                .unwrap_or_else(|(errs, config)| {
+            Some(config_handler) => {
+                AccountsConfig::get_entry(&config_handler).unwrap_or_else(|(errs, config)| {
                     tracing::info!("errors loading config: {:?}", errs);
                     config
-                }),
-            None => CosmicAccountsConfig::default(),
+                })
+            }
+            None => AccountsConfig::default(),
         }
     }
 

@@ -21,7 +21,7 @@ impl TodoService {
     }
 }
 
-#[interface(name = "dev.edfloreshz.CosmicAccounts.Todo")]
+#[interface(name = "dev.edfloreshz.Accounts.Todo")]
 impl TodoService {
     /// ToDo API URI - following GOA's Uri pattern
     #[zbus(property)]
@@ -43,7 +43,7 @@ impl Service for TodoService {
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.CosmicAccounts.Todo"
+        "dev.edfloreshz.Accounts.Todo"
     }
 
     fn is_supported(&self, account: &Account) -> bool {

@@ -21,7 +21,7 @@ impl CalendarService {
     }
 }
 
-#[interface(name = "dev.edfloreshz.CosmicAccounts.Calendar")]
+#[interface(name = "dev.edfloreshz.Accounts.Calendar")]
 impl CalendarService {
     /// CalDAV URI - matches GOA's Uri property exactly
     #[zbus(property)]
@@ -49,7 +49,7 @@ impl Service for CalendarService {
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.CosmicAccounts.Calendar"
+        "dev.edfloreshz.Accounts.Calendar"
     }
 
     fn is_supported(&self, account: &Account) -> bool {

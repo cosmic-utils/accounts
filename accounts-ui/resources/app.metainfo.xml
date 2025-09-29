@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>dev.edfloreshz.CosmicAccounts</id>
+  <id>dev.edfloreshz.Accounts</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
-  <name>Cosmic Accounts Ui</name>
+  <name>Accounts for COSMIC</name>
   <summary>An account management application for the COSMIC desktop.</summary>
   <icon type="remote" width="64" height="64" scale="1">
-    https://github.com/cosmic-utils/cosmic-accounts/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
+    https://github.com/cosmic-utils/accounts/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
   </icon>
-  <url type="vcs-browser">https://github.com/cosmic-utils/cosmic-accounts</url>
-  <launchable type="desktop-id">dev.edfloreshz.CosmicAccounts.desktop</launchable>
+  <url type="vcs-browser">https://github.com/cosmic-utils/accounts</url>
+  <launchable type="desktop-id">dev.edfloreshz.Accounts.desktop</launchable>
   <provides>
-    <id>dev.edfloreshz.CosmicAccounts</id>
+    <id>dev.edfloreshz.Accounts</id>
     <binaries>
-      <binary>cosmic-accounts-ui</binary>
+      <binary>accounts-ui</binary>
     </binaries>
   </provides>
   <requires>
@@ -32,4 +32,3 @@
   </keywords>
   <content_rating type="oars-1.1" />
 </component>
-

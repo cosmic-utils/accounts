@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{Error, Result};
-use cosmic_accounts::models::Credential;
+use accounts::models::Credential;
 use secret_service::{EncryptionType, SecretService};
 use uuid::Uuid;
 
@@ -54,7 +54,7 @@ impl CredentialStorage {
 
         collection
             .create_item(
-                &format!("COSMIC Account: {}", account_id),
+                &format!("Account: {}", account_id),
                 HashMap::from([("account_id", account_id.to_string().as_str())]),
                 serialized.as_bytes(),
                 true, // replace existing

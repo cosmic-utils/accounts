@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Cosmic Accounts Ui
+Name=Accounts for COSMIC
 Comment=An account management application for the COSMIC desktop.
 Type=Application
-Icon=dev.edfloreshz.CosmicAccounts
-Exec=cosmic-accounts-ui %F
+Icon=dev.edfloreshz.Accounts
+Exec=accounts-ui %F
 Terminal=false
 StartupNotify=true
 Categories=COSMIC
