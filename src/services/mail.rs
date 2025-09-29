@@ -21,7 +21,7 @@ impl MailService {
     }
 }
 
-#[interface(name = "com.system76.CosmicAccounts.Mail")]
+#[interface(name = "dev.edfloreshz.CosmicAccounts.Mail")]
 impl MailService {
     /// Email address - matches GOA's EmailAddress property
     #[zbus(property)]
@@ -157,7 +157,7 @@ impl Service for MailService {
     }
 
     fn interface_name(&self) -> &str {
-        "com.system76.CosmicAccounts.Mail"
+        "dev.edfloreshz.CosmicAccounts.Mail"
     }
 
     fn is_supported(&self, account: &Account) -> bool {

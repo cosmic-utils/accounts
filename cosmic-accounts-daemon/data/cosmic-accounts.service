@@ -4,7 +4,7 @@ After=graphical-session.target
 
 [Service]
 Type=dbus
-BusName=com.system76.CosmicAccounts
+BusName=dev.edfloreshz.CosmicAccounts
 ExecStart=/usr/bin/cosmic-accounts-daemon
 Restart=on-failure
 RestartSec=1

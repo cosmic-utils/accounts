@@ -21,7 +21,7 @@ impl ContactsService {
     }
 }
 
-#[interface(name = "com.system76.CosmicAccounts.Contacts")]
+#[interface(name = "dev.edfloreshz.CosmicAccounts.Contacts")]
 impl ContactsService {
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
@@ -48,7 +48,7 @@ impl Service for ContactsService {
     }
 
     fn interface_name(&self) -> &str {
-        "com.system76.CosmicAccounts.Contacts"
+        "dev.edfloreshz.CosmicAccounts.Contacts"
     }
 
     fn is_supported(&self, account: &Account) -> bool {

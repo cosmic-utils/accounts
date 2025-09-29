@@ -11,7 +11,7 @@ pub struct CosmicAccounts {
     config: CosmicAccountsConfig,
 }
 
-#[interface(name = "com.system76.CosmicAccounts")]
+#[interface(name = "dev.edfloreshz.CosmicAccounts")]
 impl CosmicAccounts {
     /// List all accounts
     async fn list_accounts(&self) -> Vec<DbusAccount> {

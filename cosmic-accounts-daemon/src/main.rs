@@ -42,12 +42,12 @@ async fn main() -> Result<()> {
 
     info!("Setting up D-Bus connection...");
     let _conn = connection::Builder::session()?
-        .name("com.system76.CosmicAccounts")?
+        .name("dev.edfloreshz.CosmicAccounts")?
         .serve_at("/com/system76/CosmicAccounts", accounts)?
         .build()
         .await?;
 
-    info!("D-Bus service started on: com.system76.CosmicAccounts");
+    info!("D-Bus service started on: dev.edfloreshz.CosmicAccounts");
     info!("Object path: /com/system76/CosmicAccounts");
 
     info!("COSMIC Accounts daemon started successfully");
