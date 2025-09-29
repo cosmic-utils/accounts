@@ -2,9 +2,9 @@
 
 use crate::fl;
 use accounts::models::{Account, Capability, Provider};
-use accounts::{AccountsClient, Uuid, zbus};
+use accounts::{AccountsClient, Local, Uuid, zbus};
 use cosmic::app::context_drawer;
-use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Subscription, stream};
 use cosmic::prelude::*;
 use cosmic::theme::spacing;
@@ -239,6 +239,63 @@ impl<'a> AppModel {
             return widget::column().spacing(spacing().space_xs);
         };
 
+        let provider_header = widget::row()
+            .push(widget::image(Self::provider_icon(&account.provider)).width(60))
+            .push(
+                widget::column()
+                    .push(widget::text::title1(account.provider.to_string()))
+                    .push(widget::text::caption_heading(account.username.to_string())),
+            )
+            .spacing(spacing().space_xs)
+            .align_y(Vertical::Center);
+
+        let account_state =
+            widget::settings::section()
+                .title(fl!("account"))
+                .add(widget::settings::flex_item(
+                    fl!("enabled"),
+                    widget::toggler(account.enabled).on_toggle(Message::EnableAccount),
+                ));
+
+        let account_details = widget::settings::section()
+            .title(fl!("details"))
+            .add(widget::settings::flex_item(
+                fl!("provider"),
+                widget::text::body(account.provider.to_string()),
+            ))
+            .add(widget::settings::flex_item(
+                fl!("display-name"),
+                widget::text::body(&account.display_name),
+            ))
+            .add(widget::settings::flex_item(
+                fl!("email"),
+                widget::text::body(account.email.clone().unwrap_or(fl!("no-email"))),
+            ))
+            .add(widget::settings::flex_item(
+                fl!("created-at"),
+                widget::text::body(
+                    account
+                        .created_at
+                        .with_timezone(&Local)
+                        .format("%B %d, %Y at %I:%M %p")
+                        .to_string(),
+                ),
+            ))
+            .add(widget::settings::flex_item(
+                fl!("last-used"),
+                widget::text::body(
+                    account
+                        .last_used
+                        .map(|last_used| {
+                            last_used
+                                .with_timezone(&Local)
+                                .format("%B %d, %Y at %I:%M %p")
+                                .to_string()
+                        })
+                        .unwrap_or(fl!("no-usage")),
+                ),
+            ));
+
         let mut capabilities = widget::settings::section().title(fl!("services"));
         for (capability, enabled) in &account.capabilities {
             capabilities = capabilities.add(widget::settings::item(
@@ -248,21 +305,10 @@ impl<'a> AppModel {
             ));
         }
 
-        let account_row =
-            widget::settings::section()
-                .title(fl!("account"))
-                .add(widget::settings::flex_item_row(vec![
-                    widget::image(Self::provider_icon(&account.provider))
-                        .width(32)
-                        .into(),
-                    widget::text(format!("{} ({})", account.display_name, account.username)).into(),
-                    widget::toggler(account.enabled)
-                        .on_toggle(Message::EnableAccount)
-                        .into(),
-                ]));
-
         widget::column()
-            .push(account_row)
+            .push(provider_header)
+            .push(account_state)
+            .push(account_details)
             .push(capabilities)
             .spacing(spacing().space_xxs)
     }
