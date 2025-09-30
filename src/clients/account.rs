@@ -74,6 +74,16 @@ impl AccountsClient {
         self.proxy.emit_account_changed(&id).await
     }
 
+    pub async fn ensure_credentials(&mut self, id: &Uuid) -> Result<()> {
+        self.proxy.ensure_credentials(&id.to_string()).await
+    }
+
+    pub async fn get_access_token(&mut self, id: &Uuid) -> Result<String> {
+        let id = id.to_string();
+        let access_token = self.proxy.get_access_token(&id).await?;
+        Ok(access_token)
+    }
+
     /// Signals
     pub async fn account_added(&self, account_id: &Uuid) -> Result<()> {
         self.proxy.emit_account_added(&account_id.to_string()).await

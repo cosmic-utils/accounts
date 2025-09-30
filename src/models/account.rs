@@ -7,7 +7,7 @@ use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
 
 use crate::models::{Provider, Service};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Account {
     pub id: Uuid,
     pub provider: Provider,

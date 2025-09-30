@@ -21,6 +21,7 @@ pub trait Accounts {
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
     async fn set_service_enabled(&mut self, id: &str, service: &str, enabled: bool) -> Result<()>;
     async fn get_access_token(&mut self, id: &str) -> Result<String>;
+    async fn ensure_credentials(&mut self, id: &str) -> Result<()>;
 
     async fn emit_account_added(&self, account_id: &str) -> Result<()>;
     async fn emit_account_removed(&self, account_id: &str) -> Result<()>;
