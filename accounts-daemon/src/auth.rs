@@ -1,5 +1,7 @@
-use accounts::models::{Account, Credential, Provider};
-use accounts::AccountsConfig;
+use accounts::{
+    config::AccountsConfig,
+    models::{Account, Credential, Provider},
+};
 use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
@@ -146,7 +148,7 @@ impl AuthManager {
             enabled: true,
             created_at: Utc::now(),
             last_used: Some(Utc::now()),
-            capabilities: provider.capabilities(),
+            services: provider.services(),
         };
 
         self.storage

@@ -7,7 +7,7 @@ use zbus::{
 };
 
 use crate::{
-    models::{Account, Capability, Provider},
+    models::{Account, Provider, Service},
     services::{Service, ServiceConfig},
 };
 
@@ -161,7 +161,7 @@ impl Service for MailService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.capabilities.contains_key(&Capability::Email)
+        account.services.contains_key(&Service::Email)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {

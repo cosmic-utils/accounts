@@ -1,10 +1,10 @@
-use crate::account::AccountsInterface;
-use accounts::AccountsClient;
-use axum::{extract::Query, http::StatusCode, response::Html, routing::get, Router};
+use crate::{account::AccountsInterface, services::ServiceFactory};
+use accounts::{AccountsClient, models::Account};
+use axum::{Router, extract::Query, http::StatusCode, response::Html, routing::get};
 use serde::Deserialize;
+use tokio::sync::OnceCell;
 use tracing::info;
 use tracing_subscriber;
-use zbus::connection;
 
 mod account;
 mod auth;
@@ -14,11 +14,13 @@ mod services;
 mod storage;
 
 pub use error::{Error, Result};
+use zbus::Connection;
+
+pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
     code: Option<String>,
-    #[allow(unused)]
     state: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
@@ -31,8 +33,6 @@ async fn main() -> Result<()> {
 
     info!("Starting Accounts for COSMIC daemon with integrated HTTP server...");
 
-    let accounts = AccountsInterface::new().await?;
-
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
         .await
@@ -42,11 +42,33 @@ async fn main() -> Result<()> {
     info!("OAuth callback URL: http://127.0.0.1:8080/callback");
 
     info!("Setting up D-Bus connection...");
-    let _conn = connection::Builder::session()?
-        .name("dev.edfloreshz.Accounts")?
-        .serve_at("/dev/edfloreshz/Accounts", accounts)?
-        .build()
-        .await?;
+    let service = AccountsInterface::new()
+        .await
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+
+    let accounts: Vec<Account> = service
+        .list_accounts()
+        .await
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+    CONNECTION
+        .set(
+            zbus::connection::Builder::session()?
+                .name("dev.edfloreshz.Accounts")?
+                .serve_at("/dev/edfloreshz/Accounts/Account", service)?
+                .build()
+                .await?,
+        )
+        .unwrap();
+
+    for account in accounts {
+        let services = ServiceFactory::create_services(&account);
+        for service in services {
+            service.add_service().await?;
+        }
+    }
 
     info!("D-Bus service started on: dev.edfloreshz.Accounts");
     info!("Object path: /dev/edfloreshz/Accounts");

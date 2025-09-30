@@ -3,8 +3,9 @@ use std::{collections::BTreeMap, str::FromStr};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
 
-use crate::models::{Capability, Provider};
+use crate::models::{Provider, Service};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Account {
@@ -16,10 +17,14 @@ pub struct Account {
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
-    pub capabilities: BTreeMap<Capability, bool>,
+    pub services: BTreeMap<Service, bool>,
 }
 
-use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
+impl Account {
+    pub fn dbus_id(&self) -> String {
+        self.id.to_string().replace("-", "_")
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, DeserializeDict, SerializeDict, Type)]
 #[zvariant(signature = "dict")]
@@ -32,7 +37,7 @@ pub struct DbusAccount {
     pub enabled: bool,
     pub created_at: String,
     pub last_used: Option<String>,
-    pub capabilities: BTreeMap<String, bool>,
+    pub services: BTreeMap<String, bool>,
 }
 
 impl From<Account> for DbusAccount {
@@ -49,10 +54,10 @@ impl From<Account> for DbusAccount {
                 .last_used
                 .clone()
                 .map(|last_used| last_used.to_string()),
-            capabilities: value
-                .capabilities
+            services: value
+                .services
                 .iter()
-                .map(|(capability, enabled)| (capability.to_string(), *enabled))
+                .map(|(service, enabled)| (service.to_string(), *enabled))
                 .collect(),
         }
     }
@@ -72,10 +77,10 @@ impl From<&Account> for DbusAccount {
                 .last_used
                 .clone()
                 .map(|last_used| last_used.to_string()),
-            capabilities: value
-                .capabilities
+            services: value
+                .services
                 .iter()
-                .map(|(capability, enabled)| (capability.to_string(), *enabled))
+                .map(|(service, enabled)| (service.to_string(), *enabled))
                 .collect(),
         }
     }
@@ -95,10 +100,10 @@ impl From<DbusAccount> for Account {
                 .last_used
                 .map(|lu| DateTime::from_str(&lu).ok())
                 .unwrap(),
-            capabilities: value
-                .capabilities
+            services: value
+                .services
                 .into_iter()
-                .map(|(capability, enabled)| (Capability::from_str(capability).unwrap(), enabled))
+                .map(|(service, enabled)| (Service::from_str(service).unwrap(), enabled))
                 .collect(),
         }
     }

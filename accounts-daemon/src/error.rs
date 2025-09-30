@@ -17,6 +17,9 @@ pub enum Error {
     #[error("Account already exists")]
     AccountAlreadyExists,
 
+    #[error("Invalid service: {0}")]
+    InvalidService(String),
+
     #[error("Invalid arguments: {0}")]
     InvalidArguments(String),
 
@@ -140,6 +143,9 @@ impl Into<zbus::fdo::Error> for Error {
             Error::AccountAlreadyExists => {
                 zbus::fdo::Error::Failed("Account already exists".to_string())
             }
+            Error::InvalidService(service) => {
+                zbus::fdo::Error::Failed(format!("Invalid service: {service}"))
+            }
         }
     }
 }
@@ -195,6 +201,9 @@ impl Into<zbus::Error> for Error {
             Error::Utf8(utf8_error) => zbus::Error::Failure(format!("UTF-8 error: {utf8_error}")),
             Error::AccountAlreadyExists => {
                 zbus::Error::Failure("Account already exists".to_string())
+            }
+            Error::InvalidService(service) => {
+                zbus::Error::Failure(format!("Invalid service: {service}"))
             }
         }
     }

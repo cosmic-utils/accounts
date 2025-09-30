@@ -47,7 +47,7 @@ impl Service for TodoService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        // Check if the account has todo capabilities
+        // Check if the account has todo services
         matches!(account.provider, Provider::Google | Provider::Microsoft)
     }
 

@@ -28,15 +28,15 @@ impl Provider {
         }
     }
 
-    pub fn capabilities(&self) -> BTreeMap<super::Capability, bool> {
+    pub fn services(&self) -> BTreeMap<super::Service, bool> {
         match self {
             Provider::Google => BTreeMap::from([
-                (super::Capability::Email, false),
-                (super::Capability::Calendar, false),
+                (super::Service::Email, false),
+                (super::Service::Calendar, false),
             ]),
             Provider::Microsoft => BTreeMap::from([
-                (super::Capability::Email, false),
-                (super::Capability::Calendar, false),
+                (super::Service::Email, false),
+                (super::Service::Calendar, false),
             ]),
         }
     }
