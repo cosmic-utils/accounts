@@ -21,10 +21,11 @@ impl CalendarClient {
         })
     }
 
-    async fn uri(&self) -> Result<String> {
+    pub async fn uri(&self) -> Result<String> {
         self.proxy.uri().await
     }
-    async fn accept_ssl_errors(&self) -> Result<bool> {
+
+    pub async fn accept_ssl_errors(&self) -> Result<bool> {
         self.proxy.accept_ssl_errors().await
     }
 }

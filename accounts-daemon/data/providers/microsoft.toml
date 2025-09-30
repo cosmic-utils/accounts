@@ -15,4 +15,4 @@ scopes = [
     "https://graph.microsoft.com/contacts.read",
     "https://graph.microsoft.com/files.read",
 ]
-capabilities = ["Email", "Calendar", "Contacts", "Files", "Documents"]
+services = ["Email", "Calendar", "Contacts", "Files", "Documents"]
