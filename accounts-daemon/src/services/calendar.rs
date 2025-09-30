@@ -1,39 +1,42 @@
 use std::collections::HashMap;
 
-use accounts::models::{Account, Capability, Provider};
+use accounts::{
+    AccountService, ServiceConfig,
+    models::{Account, Provider, Service},
+};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use zbus::{
     fdo::{Error, Result},
     interface,
 };
 
-use crate::services::{Service, ServiceConfig};
+use crate::CONNECTION;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CalendarService {
-    account_id: String,
+    account: Account,
 }
 
 impl CalendarService {
-    pub fn new(account_id: String) -> Self {
-        Self { account_id }
+    pub fn new(account: Account) -> Self {
+        Self { account }
     }
 }
 
 #[interface(name = "dev.edfloreshz.Accounts.Calendar")]
 impl CalendarService {
-    /// CalDAV URI - matches GOA's Uri property exactly
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
-        if self.account_id.contains("google") {
+        if self.account.provider == Provider::Google {
             Ok("https://apidata.googleusercontent.com/caldav/v2/".to_string())
-        } else if self.account_id.contains("microsoft") {
+        } else if self.account.provider == Provider::Microsoft {
             Ok("https://outlook.office365.com/".to_string())
         } else {
             Err(Error::Failed("Unsupported provider".to_string()))
         }
     }
 
-    /// Whether to accept SSL errors - matches GOA's AcceptSslErrors
     #[zbus(property)]
     async fn accept_ssl_errors(&self) -> Result<bool> {
         Ok(false)
@@ -41,7 +44,7 @@ impl CalendarService {
 }
 
 #[async_trait]
-impl Service for CalendarService {
+impl AccountService for CalendarService {
     fn name(&self) -> &str {
         "Calendar"
     }
@@ -51,7 +54,7 @@ impl Service for CalendarService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.capabilities.contains_key(&Capability::Calendar)
+        account.services.contains_key(&Service::Calendar)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
@@ -76,6 +79,43 @@ impl Service for CalendarService {
             provider_type: account.provider.to_string(),
             settings,
         })
+    }
+
+    async fn add_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Adding a calendar service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .at(
+                    format!(
+                        "/dev/edfloreshz/Accounts/Calendar/{}",
+                        self.account.dbus_id()
+                    ),
+                    self.clone(),
+                )
+                .await?;
+        }
+        Ok(false)
+    }
+
+    async fn remove_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Removing calendar service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .remove::<CalendarService, String>(format!(
+                    "/dev/edfloreshz/Accounts/Calendar/{}",
+                    self.account.dbus_id()
+                ))
+                .await?;
+        }
+        Ok(false)
     }
 
     async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {

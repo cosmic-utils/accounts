@@ -1,21 +1,21 @@
 use std::str::FromStr;
 
 use crate::{
-    models::{Account, Capability, Provider},
+    models::{Account, Provider, Service},
     proxy::{
         AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
         AccountsProxy,
     },
 };
 use uuid::Uuid;
-use zbus::{fdo::Result, Connection};
+use zbus::{Connection, fdo::Result};
 
 #[derive(Debug, Clone)]
 pub struct AccountsClient {
     proxy: AccountsProxy<'static>,
 }
 
-impl<'a> AccountsClient {
+impl AccountsClient {
     pub async fn new() -> Result<Self> {
         let connection = Connection::session().await?;
         let proxy = AccountsProxy::new(&connection).await?;
@@ -61,15 +61,15 @@ impl AccountsClient {
         self.proxy.emit_account_changed(&id).await
     }
 
-    pub async fn set_capability_enabled(
+    pub async fn set_service_enabled(
         &mut self,
         id: &Uuid,
-        capability: &Capability,
+        service: &Service,
         enabled: bool,
     ) -> Result<()> {
         let id = id.to_string();
         self.proxy
-            .set_capability_enabled(&id, &capability.to_string(), enabled)
+            .set_service_enabled(&id, &service.to_string(), enabled)
             .await?;
         self.proxy.emit_account_changed(&id).await
     }

@@ -1,13 +1,13 @@
-mod client;
-mod config;
+pub mod clients;
+pub mod config;
 pub mod models;
-mod proxy;
-pub mod services;
+pub mod proxy;
+mod service;
 
-pub use client::AccountsClient;
+pub use clients::AccountsClient;
+pub use service::*;
 
-pub use config::AccountsConfig;
+// Re-exports
+pub use chrono::Local;
 pub use uuid::Uuid;
 pub use zbus;
-
-pub use chrono::Local;

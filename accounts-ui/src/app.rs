@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::fl;
-use accounts::models::{Account, Capability, Provider};
+use accounts::models::{Account, Provider, Service};
 use accounts::{AccountsClient, Local, Uuid, zbus};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -60,7 +60,7 @@ pub enum Message {
     AddAccount(Uuid),
     DeleteAccount(Uuid),
     RemoveAccount(Uuid),
-    ToggleCapability(Capability, bool),
+    ToggleService(Service, bool),
     EnableAccount(bool),
     AccountSelected(Account),
     SetAccounts(Vec<Account>),
@@ -296,12 +296,12 @@ impl<'a> AppModel {
                 ),
             ));
 
-        let mut capabilities = widget::settings::section().title(fl!("services"));
-        for (capability, enabled) in &account.capabilities {
-            capabilities = capabilities.add(widget::settings::item(
-                capability.to_string(),
+        let mut services = widget::settings::section().title(fl!("services"));
+        for (service, enabled) in &account.services {
+            services = services.add(widget::settings::item(
+                service.to_string(),
                 widget::toggler(*enabled)
-                    .on_toggle(|enabled| Message::ToggleCapability(capability.clone(), enabled)),
+                    .on_toggle(|enabled| Message::ToggleService(service.clone(), enabled)),
             ));
         }
 
@@ -309,7 +309,7 @@ impl<'a> AppModel {
             .push(provider_header)
             .push(account_state)
             .push(account_details)
-            .push(capabilities)
+            .push(services)
             .spacing(spacing().space_xxs)
     }
 
@@ -649,28 +649,28 @@ impl<'a> cosmic::Application for AppModel {
                         |result: Result<(), zbus::fdo::Error>| match result {
                             Ok(_) => cosmic::action::app(Message::LoadAccounts),
                             Err(err) => {
-                                tracing::error!("Failed to remove account: {}", err);
+                                tracing::error!("Failed to toggle account: {}", err);
                                 cosmic::action::none()
                             }
                         },
                     ));
                 }
             }
-            Message::ToggleCapability(capability, enabled) => {
+            Message::ToggleService(service, enabled) => {
                 if let (Some(mut client), Some(account)) =
                     (self.client.clone(), self.selected_account.clone())
                 {
                     tasks.push(Task::perform(
                         async move {
                             client
-                                .set_capability_enabled(&account.id, &capability, enabled)
+                                .set_service_enabled(&account.id, &service, enabled)
                                 .await?;
                             Ok(())
                         },
                         |result: Result<(), zbus::fdo::Error>| match result {
                             Ok(_) => cosmic::action::app(Message::LoadAccounts),
                             Err(err) => {
-                                tracing::error!("Failed to remove account: {}", err);
+                                tracing::error!("Failed to set service: {}", err);
                                 cosmic::action::none()
                             }
                         },

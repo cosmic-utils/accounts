@@ -12,7 +12,7 @@
 ## Components
 **`accounts/` (Core Library)**
 - `Account`, `Provider`, and `Credential` models
-- Service abstraction layer for different capabilities
+- Service abstraction layer for different services
 - D-Bus client proxy for communication
 
 **`accounts-daemon/`**

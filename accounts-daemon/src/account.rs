@@ -1,7 +1,7 @@
-use crate::{auth::AuthManager, Error};
+use crate::{Error, auth::AuthManager, services::ServiceFactory};
 use accounts::{
-    models::{Capability, DbusAccount, Provider},
-    AccountsConfig,
+    config::AccountsConfig,
+    models::{DbusAccount, Provider, Service},
 };
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, object_server::SignalEmitter};
@@ -11,10 +11,10 @@ pub struct AccountsInterface {
     config: AccountsConfig,
 }
 
-#[interface(name = "dev.edfloreshz.Accounts")]
+#[interface(name = "dev.edfloreshz.Accounts.Account")]
 impl AccountsInterface {
     /// List all accounts
-    async fn list_accounts(&self) -> Vec<DbusAccount> {
+    pub(crate) async fn list_accounts(&self) -> Vec<DbusAccount> {
         self.config.accounts.iter().map(Into::into).collect()
     }
 
@@ -112,22 +112,26 @@ impl AccountsInterface {
         }
     }
 
-    async fn set_capability_enabled(
-        &mut self,
-        id: &str,
-        capability: &str,
-        enabled: bool,
-    ) -> Result<()> {
+    async fn set_service_enabled(&mut self, id: &str, service: &str, enabled: bool) -> Result<()> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         let Some(mut account) = self.config.get_account(&uuid) else {
             return Err(Error::AccountNotFound(id.to_string()).into());
         };
-        if let Some(capability) = Capability::from_str(capability.to_string()) {
-            account.capabilities.insert(capability, enabled);
-        }
+        let Some(service) = Service::from_str(service.to_string()) else {
+            return Err(Error::InvalidService(service.to_string()).into());
+        };
+        account.services.insert(service.clone(), enabled);
         self.config
             .save_account(&account)
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {}", e)))?;
+
+        if let Some(service) = ServiceFactory::create_service(&account, &service) {
+            if enabled {
+                service.add_service().await?;
+            } else {
+                service.remove_service().await?;
+            }
+        }
         Ok(())
     }
 

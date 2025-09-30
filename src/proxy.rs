@@ -4,9 +4,9 @@ use zbus::proxy;
 use crate::models::DbusAccount;
 
 #[proxy(
-    interface = "dev.edfloreshz.Accounts",
-    default_path = "/dev/edfloreshz/Accounts",
-    default_service = "dev.edfloreshz.Accounts"
+    default_service = "dev.edfloreshz.Accounts",
+    default_path = "/dev/edfloreshz/Accounts/Account",
+    interface = "dev.edfloreshz.Accounts.Account"
 )]
 pub trait Accounts {
     async fn list_accounts(&self) -> Result<Vec<DbusAccount>>;
@@ -19,12 +19,7 @@ pub trait Accounts {
     ) -> Result<String>;
     async fn remove_account(&mut self, id: &str) -> Result<()>;
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
-    async fn set_capability_enabled(
-        &mut self,
-        id: &str,
-        capability: &str,
-        enabled: bool,
-    ) -> Result<()>;
+    async fn set_service_enabled(&mut self, id: &str, service: &str, enabled: bool) -> Result<()>;
     async fn get_access_token(&mut self, id: &str) -> Result<String>;
 
     async fn emit_account_added(&self, account_id: &str) -> Result<()>;
@@ -43,4 +38,13 @@ pub trait Accounts {
 
     #[zbus(signal)]
     fn account_exists() -> Result<()>;
+}
+
+#[proxy(
+    interface = "dev.edfloreshz.Accounts",
+    default_service = "dev.edfloreshz.Accounts.Calendar"
+)]
+pub trait Calendar {
+    async fn uri(&self) -> Result<String>;
+    async fn accept_ssl_errors(&self) -> Result<bool>;
 }
