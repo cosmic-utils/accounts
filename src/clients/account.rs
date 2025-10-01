@@ -31,6 +31,16 @@ impl AccountsClient {
             .map(|accounts| accounts.into_iter().map(Into::into).collect())
     }
 
+    pub async fn list_enabled_accounts(&self, service: Service) -> Result<Vec<Account>> {
+        self.proxy.list_accounts().await.map(|accounts| {
+            accounts
+                .into_iter()
+                .filter(|a| a.enabled && matches!(a.services.get(&service.to_string()), Some(true)))
+                .map(Into::into)
+                .collect()
+        })
+    }
+
     pub async fn start_authentication(&mut self, provider: &Provider) -> Result<String> {
         self.proxy.start_authentication(&provider.to_string()).await
     }
@@ -82,6 +92,12 @@ impl AccountsClient {
         let id = id.to_string();
         let access_token = self.proxy.get_access_token(&id).await?;
         Ok(access_token)
+    }
+
+    pub async fn get_refresh_token(&mut self, id: &Uuid) -> Result<String> {
+        let id = id.to_string();
+        let refresh_token = self.proxy.get_refresh_token(&id).await?;
+        Ok(refresh_token)
     }
 
     /// Signals

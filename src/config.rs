@@ -1,6 +1,6 @@
 use crate::models::{Account, Provider};
 use cosmic_config::{
-    self, cosmic_config_derive::CosmicConfigEntry, Config, CosmicConfigEntry, Error,
+    self, Config, CosmicConfigEntry, Error, cosmic_config_derive::CosmicConfigEntry,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

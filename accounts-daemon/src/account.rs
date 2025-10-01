@@ -159,6 +159,20 @@ impl AccountsInterface {
         }
     }
 
+    async fn get_refresh_token(&mut self, id: &str) -> Result<String> {
+        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+
+        match self.config.get_account(&uuid) {
+            Some(account) => self
+                .auth_manager
+                .get_account_credentials(&account.id)
+                .await
+                .map(|credentials| credentials.refresh_token.unwrap_or_default())
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string())),
+            None => Err(Error::AccountNotFound(id.to_string()).into()),
+        }
+    }
+
     async fn emit_account_added(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
