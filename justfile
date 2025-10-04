@@ -7,7 +7,7 @@ rootdir := ''
 prefix := '/usr'
 base-dir := absolute_path(clean(rootdir / prefix))
 etc-dst := clean(rootdir) / 'etc' / 'accounts' / 'providers'
-bin-dst := base-dir / 'bin' /
+bin-dst := base-dir / 'bin'
 dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
 
 desktop := appid + '.desktop'
