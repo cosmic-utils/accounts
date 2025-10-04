@@ -1,5 +1,26 @@
 # Accounts for COSMIC - Build and Installation Commands
 
+name := 'accounts'
+ui-name := 'accounts-ui'
+appid := 'dev.edfloreshz.Accounts'
+rootdir := ''
+prefix := '/usr'
+base-dir := absolute_path(clean(rootdir / prefix))
+etc-dst := clean(rootdir) / 'etc' / 'accounts' / 'providers'
+bin-dst := base-dir / 'bin'
+dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
+
+desktop := appid + '.desktop'
+desktop-src := ui-name / 'resources' / desktop
+desktop-dst := clean(rootdir / prefix) / 'share' / 'applications' / desktop
+appdata := appid + '.metainfo.xml'
+appdata-src := ui-name / 'resources' / appdata
+appdata-dst := clean(rootdir / prefix) / 'share' / 'appdata' / appdata
+icons-src := ui-name / 'resources' / 'icons' / 'hicolor'
+icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
+icon-svg-src := icons-src / 'scalable' / 'apps' / 'icon.svg'
+icon-svg-dst := icons-dst / 'scalable' / 'apps' / appid + '.svg'
+
 # Default recipe - show available commands
 default:
     @just --list
@@ -46,17 +67,19 @@ clean:
 
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
-    sudo cp target/release/accounts-daemon /usr/bin/
-    sudo cp data/accounts.service /usr/share/dbus-1/services/
+    install -Dm0755 target/release/accounts-daemon -t {{ bin-dst }}
+    install -Dm0644 accounts-daemon/data/cosmic-accounts.service -t {{ dbus-dst }}
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
-    sudo cp target/release/accounts-ui /usr/bin/
+    install -Dm0755 target/release/accounts-ui -t {{ bin-dst }}
+    install -Dm0644 accounts-ui/resources/app.desktop {{desktop-dst}}
+    install -Dm0644 accounts-ui/resources/app.metainfo.xml {{appdata-dst}}
+    install -Dm0644 {{icon-svg-src}} {{icon-svg-dst}}
 
 # Install provider configurations (requires sudo)
 install-configs:
-    sudo mkdir -p /etc/accounts/providers
-    sudo cp data/providers/*.toml /etc/accounts/providers/
+    install -Dm0644 accounts-daemon/data/providers/*.toml -t {{ etc-dst }}
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
