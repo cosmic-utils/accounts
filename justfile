@@ -1,5 +1,14 @@
 # Accounts for COSMIC - Build and Installation Commands
 
+name := 'accounts'
+appid := 'dev.edfloreshz.Accounts'
+rootdir := ''
+prefix := '/usr'
+base-dir := absolute_path(clean(rootdir / prefix))
+bin-src := 'target' / 'release' / name
+bin-dst := base-dir / 'bin' /
+dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
+
 # Default recipe - show available commands
 default:
     @just --list
@@ -44,19 +53,23 @@ check: test lint check-format
 clean:
     cargo clean
 
+    install -Dm0755 {{ bin-src }} {{ bin-dst }}
+    install -Dm0644 res/app.desktop {{ desktop-dst }}
+    install -Dm0644 {{ icon-svg-src }} {{ icon-svg-dst }}
+
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
-    sudo cp target/release/accounts-daemon /usr/bin/
-    sudo cp data/accounts.service /usr/share/dbus-1/services/
+    install -Dm0755 target/release/accounts-daemon {{ bin-dst }}
+    install -Dm0644 data/accounts.service {{ dbus-dst }}
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
-    sudo cp target/release/accounts-ui /usr/bin/
+    install -Dm0755 target/release/accounts-ui {{ bin-dst }}
 
 # Install provider configurations (requires sudo)
 install-configs:
-    sudo mkdir -p /etc/accounts/providers
-    sudo cp data/providers/*.toml /etc/accounts/providers/
+    sudo mkdir -p (rootdir) / 'etc' / 'accounts' / 'providers'
+    install -Dm0644 data/providers/*.toml (rootdir) / 'etc' / 'accounts' / 'providers'
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
