@@ -55,12 +55,12 @@ clean:
 
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
-    install -Dm0755 target/release/accounts-daemon {{ bin-dst }}
-    install -Dm0644 accounts-daemon/data/cosmic-accounts.service {{ dbus-dst }}
+    install -Dm0755 target/release/accounts-daemon -t {{ bin-dst }}
+    install -Dm0644 accounts-daemon/data/cosmic-accounts.service -t {{ dbus-dst }}
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
-    install -Dm0755 target/release/accounts-ui {{ bin-dst }}
+    install -Dm0755 target/release/accounts-ui -t {{ bin-dst }}
 
 # Install provider configurations (requires sudo)
 install-configs:
