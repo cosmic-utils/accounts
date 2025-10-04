@@ -64,7 +64,7 @@ install-gui: build-gui
 
 # Install provider configurations (requires sudo)
 install-configs:
-    install -Dm0644 accounts-daemon/data/providers/*.toml {{ etc-dst }}
+    install -Dm0644 accounts-daemon/data/providers/*.toml -t {{ etc-dst }}
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
