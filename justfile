@@ -5,7 +5,7 @@ appid := 'dev.edfloreshz.Accounts'
 rootdir := ''
 prefix := '/usr'
 base-dir := absolute_path(clean(rootdir / prefix))
-bin-src := 'target' / 'release' / name
+etc-dst := clean(rootdir) / 'etc' / 'accounts' / 'providers'
 bin-dst := base-dir / 'bin' /
 dbus-dst := clean(rootdir / prefix) / 'share' / 'dbus-1' / 'services'
 
@@ -53,14 +53,10 @@ check: test lint check-format
 clean:
     cargo clean
 
-    install -Dm0755 {{ bin-src }} {{ bin-dst }}
-    install -Dm0644 res/app.desktop {{ desktop-dst }}
-    install -Dm0644 {{ icon-svg-src }} {{ icon-svg-dst }}
-
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
     install -Dm0755 target/release/accounts-daemon {{ bin-dst }}
-    install -Dm0644 data/accounts.service {{ dbus-dst }}
+    install -Dm0644 accounts-daemon/data/cosmic-accounts.service {{ dbus-dst }}
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
@@ -68,8 +64,7 @@ install-gui: build-gui
 
 # Install provider configurations (requires sudo)
 install-configs:
-    sudo mkdir -p (rootdir) / 'etc' / 'accounts' / 'providers'
-    install -Dm0644 data/providers/*.toml (rootdir) / 'etc' / 'accounts' / 'providers'
+    install -Dm0644 accounts-daemon/data/providers/*.toml {{ etc-dst }}
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
