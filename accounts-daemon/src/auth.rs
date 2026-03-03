@@ -30,15 +30,12 @@ impl AuthManager {
         let mut configs = HashMap::new();
 
         for provider in Provider::list() {
-            let config_path =
-                Path::new("accounts-daemon/data/providers").join(provider.file_name());
-            if !config_path.exists() {
-                tracing::error!("Provider config file not found: {}", config_path.display());
-                continue;
+            if let Some(mut config) = Self::load_provider_config(&provider)? {
+                Self::apply_env_overrides(&provider, &mut config);
+                configs.insert(provider, config);
+            } else {
+                tracing::error!("Provider config for {:?} not found in any location", provider);
             }
-            let content = std::fs::read_to_string(config_path)?;
-            let toml_config: AccountProviderConfig = toml::from_str(&content)?;
-            configs.insert(provider.clone(), toml_config.provider);
         }
 
         Ok(Self {
@@ -47,6 +44,58 @@ impl AuthManager {
             storage: CredentialStorage::new().await?,
             config: AccountsConfig::config(),
         })
+    }
+
+    fn load_provider_config(provider: &Provider) -> Result<Option<ProviderConfig>> {
+        let file_name = provider.file_name();
+        let paths = vec![
+            // 1. User config: ~/.config/cosmic/accounts/providers/
+            std::env::var("XDG_CONFIG_HOME")
+                .map(|p| Path::new(&p).to_path_buf())
+                .unwrap_or_else(|_| {
+                    let home = std::env::var("HOME").unwrap_or_default();
+                    Path::new(&home).join(".config")
+                })
+                .join("cosmic/accounts/providers")
+                .join(file_name),
+            // 2. System config: /etc/cosmic/accounts/providers/
+            Path::new("/etc/cosmic/accounts/providers").join(file_name),
+            // 3. System data: /usr/share/cosmic/accounts/providers/
+            Path::new("/usr/share/cosmic/accounts/providers").join(file_name),
+            // 4. Built-in/Dev path
+            Path::new("accounts-daemon/data/providers").join(file_name),
+        ];
+
+        for path in paths {
+            if path.exists() {
+                tracing::info!("Loading {:?} config from: {}", provider, path.display());
+                let content = std::fs::read_to_string(path)?;
+                let toml_config: AccountProviderConfig = toml::from_str(&content)?;
+                return Ok(Some(toml_config.provider));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn apply_env_overrides(provider: &Provider, config: &mut ProviderConfig) {
+        let provider_env = match provider {
+            Provider::Google => "GOOGLE",
+            Provider::Microsoft => "MICROSOFT",
+        };
+
+        let client_id_env = format!("COSMIC_ACCOUNTS_{}_CLIENT_ID", provider_env);
+        let client_secret_env = format!("COSMIC_ACCOUNTS_{}_CLIENT_SECRET", provider_env);
+
+        if let Ok(val) = std::env::var(&client_id_env) {
+            tracing::info!("Overriding {:?} client_id from env: {}", provider, client_id_env);
+            config.client_id = val;
+        }
+
+        if let Ok(val) = std::env::var(&client_secret_env) {
+            tracing::info!("Overriding {:?} client_secret from env: {}", provider, client_secret_env);
+            config.client_secret = val;
+        }
     }
 
     pub async fn start_auth_flow(&mut self, provider: Provider) -> Result<String> {

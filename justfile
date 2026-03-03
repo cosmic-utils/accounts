@@ -55,9 +55,9 @@ install-gui: build-gui
 
 # Install provider configurations (requires sudo)
 install-configs:
-    sudo mkdir -p /etc/accounts/providers
-    sudo cp data/providers/*.toml /etc/accounts/providers/
-    @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
+    sudo mkdir -p /etc/cosmic/accounts/providers
+    sudo cp data/providers/*.toml /etc/cosmic/accounts/providers/
+    @echo "Remember to update OAuth2 credentials in /etc/cosmic/accounts/providers/"
 
 # Install everything (requires sudo)
 install: build install-daemon install-gui install-configs
@@ -67,7 +67,7 @@ uninstall:
     sudo rm -f /usr/bin/accounts-daemon
     sudo rm -f /usr/bin/accounts-ui
     sudo rm -f /usr/share/dbus-1/services/accounts.service
-    sudo rm -rf /etc/accounts
+    sudo rm -rf /etc/cosmic/accounts
 
 # Start the daemon service (user session)
 start-daemon:
