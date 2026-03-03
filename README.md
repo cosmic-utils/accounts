@@ -50,6 +50,8 @@
 
 Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
+For testers and developers, check the [Custom OAuth Provider Setup](docs/EXTERNAL_PROVIDERS.md) guide to use your own credentials.
+
 ## Related Projects
 
 - [GNOME Online Accounts](https://gitlab.gnome.org/GNOME/gnome-online-accounts) - Inspiration for this project
