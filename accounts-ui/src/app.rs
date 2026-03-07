@@ -452,7 +452,7 @@ impl<'a> cosmic::Application for AppModel {
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
         self.selected_account.as_ref().map(|account| {
             widget::row()
-                .push(widget::horizontal_space())
+                .push(widget::space::horizontal())
                 .push(
                     widget::button::standard(fl!("remove"))
                         .class(cosmic::style::Button::Destructive)
@@ -478,7 +478,7 @@ impl<'a> cosmic::Application for AppModel {
         };
 
         let toaster =
-            widget::row::row().push(widget::toaster(&self.toasts, widget::horizontal_space()));
+            widget::row::row().push(widget::toaster(&self.toasts, widget::space::horizontal()));
 
         widget::column()
             .push(widget::scrollable(content))
@@ -494,85 +494,110 @@ impl<'a> cosmic::Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
+        // Wraps a client with a stable name-based Hash so `run_with` can
+        // identify each subscription without requiring AccountsClient: Hash.
+        struct SubKey {
+            name: &'static str,
+            client: AccountsClient,
+        }
+        impl std::hash::Hash for SubKey {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.name.hash(state);
+            }
+        }
+        impl PartialEq for SubKey {
+            fn eq(&self, other: &Self) -> bool {
+                self.name == other.name
+            }
+        }
+        impl Eq for SubKey {}
 
         let Some(client) = self.client.clone() else {
             return Subscription::none();
         };
-        let account_changed_client = client.clone();
-        let account_removed_client = client.clone();
-        let account_exists_client = client.clone();
+
+        fn subscription_init() -> impl futures_util::Stream<Item = Message> {
+            cosmic::iced::stream::channel(4, async |mut channel| {
+                _ = channel.send(Message::SubscriptionChannel).await;
+                futures_util::future::pending::<()>().await
+            })
+        }
 
         Subscription::batch(vec![
             // Create a subscription which emits updates through a channel.
-            Subscription::run_with_id(
-                std::any::TypeId::of::<MySubscription>(),
-                cosmic::iced::stream::channel(4, move |mut channel| async move {
-                    _ = channel.send(Message::SubscriptionChannel).await;
-
-                    futures_util::future::pending().await
-                }),
-            ),
-            Subscription::run_with_id(
-                "account_added",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_added_stream) = client.receive_account_added().await {
-                        while let Some(account_added) = account_added_stream.next().await {
-                            let args = account_added.args().expect("Error parsing arguments");
-                            if let Err(err) = output
-                                .send(Message::AddAccount(
-                                    Uuid::parse_str(args.account_id())
-                                        .expect("Expected account id to be UUID"),
-                                ))
-                                .await
-                            {
-                                tracing::warn!("failed to send message from subscription: {}", err);
+            Subscription::run(subscription_init),
+            Subscription::run_with(
+                SubKey { name: "account_added", client: client.clone() },
+                |key| {
+                    let client = key.client.clone();
+                    stream::channel(1, async move |mut output| {
+                        if let Ok(mut account_added_stream) = client.receive_account_added().await {
+                            while let Some(account_added) = account_added_stream.next().await {
+                                let args = account_added.args().expect("Error parsing arguments");
+                                if let Err(err) = output
+                                    .send(Message::AddAccount(
+                                        Uuid::parse_str(args.account_id())
+                                            .expect("Expected account id to be UUID"),
+                                    ))
+                                    .await
+                                {
+                                    tracing::warn!("failed to send message from subscription: {}", err);
+                                }
                             }
                         }
-                    }
-                }),
+                    })
+                },
             ),
-            Subscription::run_with_id(
-                "account_changed",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_changed_stream) =
-                        account_changed_client.receive_account_changed().await
-                    {
-                        while let Some(_) = account_changed_stream.next().await {
-                            if let Err(err) = output.send(Message::LoadAccounts).await {
-                                tracing::warn!("failed to send message from subscription: {}", err);
+            Subscription::run_with(
+                SubKey { name: "account_changed", client: client.clone() },
+                |key| {
+                    let client = key.client.clone();
+                    stream::channel(1, async move |mut output| {
+                        if let Ok(mut account_changed_stream) =
+                            client.receive_account_changed().await
+                        {
+                            while let Some(_) = account_changed_stream.next().await {
+                                if let Err(err) = output.send(Message::LoadAccounts).await {
+                                    tracing::warn!("failed to send message from subscription: {}", err);
+                                }
                             }
                         }
-                    }
-                }),
+                    })
+                },
             ),
-            Subscription::run_with_id(
-                "account_removed",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_removed_stream) =
-                        account_removed_client.receive_account_removed().await
-                    {
-                        while let Some(_) = account_removed_stream.next().await {
-                            if let Err(err) = output.send(Message::LoadAccounts).await {
-                                tracing::warn!("failed to send message from subscription: {}", err);
+            Subscription::run_with(
+                SubKey { name: "account_removed", client: client.clone() },
+                |key| {
+                    let client = key.client.clone();
+                    stream::channel(1, async move |mut output| {
+                        if let Ok(mut account_removed_stream) =
+                            client.receive_account_removed().await
+                        {
+                            while let Some(_) = account_removed_stream.next().await {
+                                if let Err(err) = output.send(Message::LoadAccounts).await {
+                                    tracing::warn!("failed to send message from subscription: {}", err);
+                                }
                             }
                         }
-                    }
-                }),
+                    })
+                },
             ),
-            Subscription::run_with_id(
-                "account_exists",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_exists_stream) =
-                        account_exists_client.receive_account_exists().await
-                    {
-                        while let Some(_) = account_exists_stream.next().await {
-                            if let Err(err) = output.send(Message::AccountExists).await {
-                                tracing::warn!("failed to send message from subscription: {}", err);
+            Subscription::run_with(
+                SubKey { name: "account_exists", client: client.clone() },
+                |key| {
+                    let client = key.client.clone();
+                    stream::channel(1, async move |mut output| {
+                        if let Ok(mut account_exists_stream) =
+                            client.receive_account_exists().await
+                        {
+                            while let Some(_) = account_exists_stream.next().await {
+                                if let Err(err) = output.send(Message::AccountExists).await {
+                                    tracing::warn!("failed to send message from subscription: {}", err);
+                                }
                             }
                         }
-                    }
-                }),
+                    })
+                },
             ),
         ])
     }

@@ -31,7 +31,7 @@ impl AuthManager {
 
         for provider in Provider::list() {
             let config_path =
-                Path::new("accounts-daemon/data/providers").join(provider.file_name());
+                Path::new("/etc/accounts/providers").join(provider.file_name());
             if !config_path.exists() {
                 tracing::error!("Provider config file not found: {}", config_path.display());
                 continue;

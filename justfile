@@ -47,7 +47,7 @@ clean:
 # Install daemon system-wide (requires sudo)
 install-daemon: build-daemon
     sudo cp target/release/accounts-daemon /usr/bin/
-    sudo cp data/accounts.service /usr/share/dbus-1/services/
+    sudo cp accounts-daemon/data/cosmic-accounts.service /usr/lib/systemd/user/
 
 # Install GUI system-wide (requires sudo)
 install-gui: build-gui
@@ -56,36 +56,47 @@ install-gui: build-gui
 # Install provider configurations (requires sudo)
 install-configs:
     sudo mkdir -p /etc/accounts/providers
-    sudo cp data/providers/*.toml /etc/accounts/providers/
+    sudo cp accounts-daemon/data/providers/*.toml /etc/accounts/providers/
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
+# Install desktop entry and icons (requires sudo)
+install-desktop:
+    sudo cp accounts-ui/resources/app.desktop /usr/share/applications/dev.edfloreshz.Accounts.desktop
+    sudo update-desktop-database /usr/share/applications/ 2>/dev/null || true
+
 # Install everything (requires sudo)
-install: build install-daemon install-gui install-configs
+install: build install-daemon install-gui install-configs install-desktop
 
 # Uninstall system files (requires sudo)
 uninstall:
     sudo rm -f /usr/bin/accounts-daemon
     sudo rm -f /usr/bin/accounts-ui
-    sudo rm -f /usr/share/dbus-1/services/accounts.service
+    sudo rm -f /usr/lib/systemd/user/cosmic-accounts.service
+    sudo rm -f /usr/share/applications/dev.edfloreshz.Accounts.desktop
     sudo rm -rf /etc/accounts
+
+# Start the daemon and launch the UI
+start: start-daemon
+    /usr/bin/accounts-ui
 
 # Start the daemon service (user session)
 start-daemon:
-    systemctl --user enable accounts.service
-    systemctl --user start accounts.service
+    systemctl --user daemon-reload
+    systemctl --user enable cosmic-accounts
+    systemctl --user start cosmic-accounts
 
 # Stop the daemon service (user session)
 stop-daemon:
-    systemctl --user stop accounts.service
-    systemctl --user disable accounts.service
+    systemctl --user stop cosmic-accounts
+    systemctl --user disable cosmic-accounts
 
 # Check daemon status
 status:
-    systemctl --user status accounts.service
+    systemctl --user status cosmic-accounts
 
 # View daemon logs
 logs:
-    journalctl --user -u accounts.service -f
+    journalctl --user -u cosmic-accounts -f
 
 # Run CLI tool with list command
 cli-list:
@@ -159,7 +170,7 @@ dev-setup:
     @echo "Development setup:"
     @echo "1. Install Rust toolchain: https://rustup.rs/"
     @echo "2. Install system dependencies:"
-    @echo "   Ubuntu/Debian: sudo apt install libdbus-1-dev libsecret-1-dev"
+    @echo "   Ubuntu/Debian: sudo apt install libssl-dev pkg-config libdbus-1-dev libsecret-1-dev libxkbcommon-dev libwayland-dev"
     @echo "   Fedora: sudo dnf install dbus-devel libsecret-devel"
     @echo "   Arch: sudo pacman -S dbus libsecret"
     @echo "3. Install development tools:"
