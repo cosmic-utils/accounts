@@ -123,6 +123,5 @@ A third party ships a binary, a `.service` D-Bus activation file, and a manifest
 
 ## Verification
 
-- `cargo build -p accounts -p accounts-daemon -p accounts-provider-google -p accounts-provider-microsoft` — all four compile cleanly.
+- `cargo build --workspace` — all five crates compile cleanly with zero errors.
 - Manual test: run `accounts-daemon`, `accounts-provider-google`, and `accounts-provider-microsoft` on the session bus, call `list_providers()` and confirm both show up with their declared services without either provider process needing to be involved. Then exercise the add-account flow with real OAuth client credentials to confirm `get_user_info`/`get_service_config` round-trip correctly.
-- `accounts-ui` has pre-existing, unrelated build failures against the currently-pinned `libcosmic` git revision (see `ARCHITECTURE.md` Known Gaps) — the provider-plugin changes there were verified by confirming they introduce zero additional compiler errors on top of that baseline (`git stash` diff comparison).
