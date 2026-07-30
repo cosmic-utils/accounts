@@ -30,6 +30,9 @@ workspace = true
 [dependencies.tokio]
 workspace = true
 
+[dependencies.toml]
+workspace = true
+
 [dependencies.tracing]
 workspace = true
 
@@ -45,6 +48,8 @@ workspace = true
 [workspace]
 members = [
     "accounts-daemon",
+    "accounts-provider-google",
+    "accounts-provider-microsoft",
     "accounts-ui",
 ]
 

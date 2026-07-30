@@ -44,7 +44,7 @@ impl From<Account> for DbusAccount {
     fn from(value: Account) -> Self {
         Self {
             id: value.id.to_string(),
-            provider: value.provider.to_string(),
+            provider: value.provider,
             display_name: value.display_name,
             username: value.username,
             email: value.email,
@@ -67,7 +67,7 @@ impl From<&Account> for DbusAccount {
     fn from(value: &Account) -> Self {
         Self {
             id: value.id.to_string(),
-            provider: value.provider.to_string(),
+            provider: value.provider.clone(),
             display_name: value.display_name.clone(),
             username: value.username.clone(),
             email: value.email.clone(),
@@ -90,7 +90,7 @@ impl From<DbusAccount> for Account {
     fn from(value: DbusAccount) -> Self {
         Account {
             id: Uuid::from_str(&value.id).unwrap(),
-            provider: Provider::from_str(&value.provider).unwrap(),
+            provider: value.provider,
             display_name: value.display_name,
             username: value.username,
             email: value.email,
