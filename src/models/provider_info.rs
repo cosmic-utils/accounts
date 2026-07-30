@@ -9,4 +9,8 @@ pub struct DbusProviderInfo {
     pub id: String,
     pub name: String,
     pub services: Vec<String>,
+    /// Either an absolute path to an icon file (`.svg`/`.png`/...) or a
+    /// freedesktop icon-theme name to resolve, e.g. `network-server-symbolic`.
+    /// `None` if the provider's manifest doesn't declare one.
+    pub icon: Option<String>,
 }
