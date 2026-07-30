@@ -20,6 +20,10 @@ build-daemon:
 build-gui:
     cargo build --release -p accounts-ui
 
+# Build the provider processes
+build-providers:
+    cargo build --release -p accounts-provider-google -p accounts-provider-microsoft
+
 # Run all tests
 test:
     cargo test --lib
@@ -95,9 +99,60 @@ cli-list:
 cli-help:
     cargo run --example cli -- --help
 
-# Development: run daemon in foreground with debug logging
-dev-daemon:
-    RUST_LOG=debug cargo run --example daemon
+# Run the Google provider process in the foreground with debug logging.
+# Registers dev.edfloreshz.Accounts.Provider.Google on the session bus.
+run-google:
+    RUST_LOG=debug cargo run -p accounts-provider-google
+
+# Run the Microsoft provider process in the foreground with debug logging.
+# Registers dev.edfloreshz.Accounts.Provider.Microsoft on the session bus.
+run-microsoft:
+    RUST_LOG=debug cargo run -p accounts-provider-microsoft
+
+# Run both provider processes in the foreground (Ctrl-C stops both).
+# Uses the manifests in accounts-daemon/data/providers/, which ProviderRegistry
+# reads as a dev-mode fallback without needing anything installed.
+run-providers:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+    RUST_LOG=debug cargo run -p accounts-provider-google &
+    RUST_LOG=debug cargo run -p accounts-provider-microsoft &
+    wait
+
+# Run the daemon in the foreground with debug logging.
+# Run from the repo root so it picks up accounts-daemon/data/providers/*.toml.
+run-daemon:
+    RUST_LOG=debug cargo run -p accounts-daemon
+
+# Run the GUI in the foreground with debug logging.
+run-ui:
+    RUST_LOG=debug cargo run -p accounts-ui
+
+# Run providers + daemon + UI together for a full local test session.
+# Ctrl-C stops the whole stack. Requires a running D-Bus session bus and
+# secret-service provider (gnome-keyring/kwallet) for the daemon's credential
+# storage; OAuth flows additionally need real client credentials in
+# accounts-daemon/data/providers/*.toml.
+run-stack:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+    echo "Starting providers..."
+    RUST_LOG=debug cargo run -p accounts-provider-google &
+    RUST_LOG=debug cargo run -p accounts-provider-microsoft &
+    sleep 1
+    echo "Starting daemon..."
+    RUST_LOG=debug cargo run -p accounts-daemon &
+    sleep 1
+    echo "Starting UI..."
+    RUST_LOG=debug cargo run -p accounts-ui
+
+# List providers currently advertised by a running daemon over D-Bus
+# (requires busctl; useful to confirm capability advertisement without the UI).
+list-providers:
+    busctl --user call dev.edfloreshz.Accounts /dev/edfloreshz/Accounts/Account \
+        dev.edfloreshz.Accounts.Account ListProviders
 
 # Development: watch for changes and run tests
 dev-watch:
