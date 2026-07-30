@@ -4,6 +4,7 @@ name = "Google"
 dbus_name = "dev.edfloreshz.Accounts.Provider.Google"
 exec = "/usr/bin/accounts-provider-google"
 services = ["Email", "Calendar", "Contacts", "Todo"]
+icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/img/google.png"        # remote URL — fetched async, cached
 
 [oauth]
 client_id = "your-client-id.googleusercontent.com"

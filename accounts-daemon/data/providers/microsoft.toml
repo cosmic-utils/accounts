@@ -4,6 +4,7 @@ name = "Microsoft"
 dbus_name = "dev.edfloreshz.Accounts.Provider.Microsoft"
 exec = "/usr/bin/accounts-provider-microsoft"
 services = ["Email", "Calendar", "Contacts", "Todo"]
+icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/img/microsoft.png"
 
 [oauth]
 client_id = "your-client-id"
@@ -19,6 +20,9 @@ scopes = [
     "https://graph.microsoft.com/calendars.read",
     "https://graph.microsoft.com/contacts.read",
     "https://graph.microsoft.com/tasks.read",
+    "https://graph.microsoft.com/tasks.read.shared",
+    "https://graph.microsoft.com/tasks.readwrite",
+    "https://graph.microsoft.com/tasks.readwrite.shared",
     "https://graph.microsoft.com/mail.read",
 ]
 
