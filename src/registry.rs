@@ -97,7 +97,9 @@ impl ProviderRegistry {
 
                 match toml::from_str::<ProviderManifest>(&content) {
                     Ok(manifest) => {
-                        providers.insert(manifest.provider.id.clone(), manifest);
+                        providers
+                            .entry(manifest.provider.id.clone())
+                            .or_insert(manifest);
                     }
                     Err(err) => {
                         tracing::error!(
