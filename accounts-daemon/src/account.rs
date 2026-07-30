@@ -1,7 +1,7 @@
 use crate::{Error, auth::AuthManager, services::ServiceFactory};
 use accounts::{
     config::AccountsConfig,
-    models::{DbusAccount, Provider, Service},
+    models::{DbusAccount, DbusProviderInfo, Service},
 };
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, object_server::SignalEmitter};
@@ -33,15 +33,29 @@ impl AccountsInterface {
         }
     }
 
+    /// Every known provider and the services it declares support for. Sourced
+    /// directly from the manifest registry, no provider process needs to be running.
+    async fn list_providers(&self) -> Vec<DbusProviderInfo> {
+        crate::REGISTRY
+            .get()
+            .map(|registry| registry.list_infos())
+            .unwrap_or_default()
+    }
+
     /// Start OAuth2 authentication flow for a provider
     async fn start_authentication(&mut self, provider_name: &str) -> Result<String> {
-        let provider = Provider::from_str(provider_name);
-
-        let Some(provider) = provider else {
-            return Err(Error::InvalidProvider(provider_name.to_string()).into());
+        let Some(registry) = crate::REGISTRY.get() else {
+            return Err(Error::InvalidProviderConfig.into());
         };
+        if registry.get(provider_name).is_none() {
+            return Err(Error::InvalidProvider(provider_name.to_string()).into());
+        }
 
-        match self.auth_manager.start_auth_flow(provider).await {
+        match self
+            .auth_manager
+            .start_auth_flow(provider_name.to_string())
+            .await
+        {
             Ok(url) => Ok(url),
             Err(err) => {
                 tracing::error!("Failed to start authentication flow: {}", err);
