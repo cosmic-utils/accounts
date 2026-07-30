@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::fl;
-use accounts::models::{Account, Provider, Service};
+use accounts::models::{Account, DbusProviderInfo, Service};
 use accounts::{AccountsClient, Local, Uuid, zbus};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -36,8 +36,8 @@ pub struct AppModel {
     client: Option<AccountsClient>,
     // Accounts data.
     accounts: Vec<Account>,
-    // Providers list.
-    providers: Vec<Provider>,
+    // Providers list, fetched from the daemon's manifest registry.
+    providers: Vec<DbusProviderInfo>,
     selected_account: Option<Account>,
 }
 
@@ -68,8 +68,10 @@ pub enum Message {
     // Client
     CreateClient,
     SetClient(Option<AccountsClient>),
+    // Providers
+    SetProviders(Vec<DbusProviderInfo>),
     // Auth
-    StartAuth(Provider),
+    StartAuth(String),
 }
 
 impl<'a> AppModel {
@@ -121,14 +123,10 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(
-                        widget::image(Self::provider_icon(provider))
-                            .width(24)
-                            .height(24),
-                    )
-                    .push(widget::text(provider.to_string()))
+                    .push(Self::provider_icon(&provider.id, 24))
+                    .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
-                    .on_press(Message::StartAuth(provider.clone()));
+                    .on_press(Message::StartAuth(provider.id.clone()));
 
                 providers_row = providers_row.push(provider_button);
                 current_row_count += 1;
@@ -170,7 +168,7 @@ impl<'a> AppModel {
             .width(Length::Fill)
     }
 
-    fn add_account_dialog() -> impl Into<Element<'a, Message>> {
+    fn add_account_dialog(&self) -> impl Into<Element<'_, Message>> {
         // Main container
         let mut main_column = widget::column()
             .spacing(spacing().space_m)
@@ -180,26 +178,22 @@ impl<'a> AppModel {
         // App icon and title section
 
         // Providers section
-        if !Provider::list().is_empty() {
+        if !self.providers.is_empty() {
             let mut providers_row = widget::row().spacing(spacing().space_s);
             let mut current_row_count = 0;
             let max_per_row = 3;
             let mut providers_column = widget::column().spacing(spacing().space_xs);
 
-            for provider in &Provider::list() {
+            for provider in &self.providers {
                 // Add provider icon if available
                 let provider_button = widget::row()
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(
-                        widget::image(Self::provider_icon(provider))
-                            .width(24)
-                            .height(24),
-                    )
-                    .push(widget::text(provider.to_string()))
+                    .push(Self::provider_icon(&provider.id, 24))
+                    .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
-                    .on_press(Message::StartAuth(provider.clone()));
+                    .on_press(Message::StartAuth(provider.id.clone()));
 
                 providers_row = providers_row.push(provider_button);
                 current_row_count += 1;
@@ -240,7 +234,7 @@ impl<'a> AppModel {
         };
 
         let provider_header = widget::row()
-            .push(widget::image(Self::provider_icon(&account.provider)).width(60))
+            .push(Self::provider_icon(&account.provider, 60))
             .push(
                 widget::column()
                     .push(widget::text::title1(account.provider.to_string()))
@@ -313,14 +307,26 @@ impl<'a> AppModel {
             .spacing(spacing().space_xxs)
     }
 
-    fn provider_icon(provider: &Provider) -> Handle {
-        match provider {
-            Provider::Google => {
-                Handle::from_bytes(include_bytes!("../resources/img/google.png").to_vec())
-            }
-            Provider::Microsoft => {
-                Handle::from_bytes(include_bytes!("../resources/img/microsoft.png").to_vec())
-            }
+    /// Icons are a cosmetic lookup by provider id, not a coupling to specific
+    /// providers: an unrecognized id (including any third-party provider) falls
+    /// back to a generic icon rather than failing to render.
+    fn provider_icon(provider_id: &str, size: u16) -> Element<'static, Message> {
+        match provider_id {
+            "google" => widget::image(Handle::from_bytes(
+                include_bytes!("../resources/img/google.png").to_vec(),
+            ))
+            .width(size)
+            .height(size)
+            .into(),
+            "microsoft" => widget::image(Handle::from_bytes(
+                include_bytes!("../resources/img/microsoft.png").to_vec(),
+            ))
+            .width(size)
+            .height(size)
+            .into(),
+            _ => widget::icon::from_name("network-server-symbolic")
+                .size(size)
+                .into(),
         }
     }
 }
@@ -362,7 +368,7 @@ impl<'a> cosmic::Application for AppModel {
             dialog_pages: VecDeque::new(),
             client: None,
             accounts: Vec::new(),
-            providers: Provider::list().to_vec(),
+            providers: Vec::new(),
             selected_account: None,
         };
 
@@ -407,7 +413,7 @@ impl<'a> cosmic::Application for AppModel {
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
         let dialog_page = self.dialog_pages.front()?;
-        let dialog = dialog_page.view();
+        let dialog = dialog_page.view(self);
         Some(dialog.into())
     }
 
@@ -777,6 +783,21 @@ impl<'a> cosmic::Application for AppModel {
             Message::SetClient(client) => {
                 self.client = client;
                 tasks.push(cosmic::task::message(Message::LoadAccounts));
+
+                if let Some(client) = self.client.clone() {
+                    tasks.push(Task::perform(
+                        async move {
+                            client.list_providers().await.unwrap_or_else(|err| {
+                                tracing::error!("Failed to list providers: {}", err);
+                                Vec::new()
+                            })
+                        },
+                        |providers| cosmic::Action::App(Message::SetProviders(providers)),
+                    ));
+                }
+            }
+            Message::SetProviders(providers) => {
+                self.providers = providers;
             }
             Message::StartAuth(provider) => {
                 tracing::info!(
@@ -891,14 +912,14 @@ pub enum DialogPage {
     AddAccount,
 }
 
-impl<'a> DialogPage {
-    fn view(&self) -> impl Into<Element<'_, Message>> {
+impl DialogPage {
+    fn view<'a>(&self, app: &'a AppModel) -> impl Into<Element<'a, Message>> {
         match self {
             DialogPage::AddAccount => widget::dialog()
                 .title(fl!("add-account-title"))
                 .body(fl!("add-account-body"))
                 .primary_action(widget::button::text(fl!("close")).on_press(Message::CloseDialog))
-                .control(AppModel::add_account_dialog()),
+                .control(app.add_account_dialog()),
         }
     }
 }
