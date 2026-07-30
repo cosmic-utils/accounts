@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
-    models::{Account, Provider, Service},
+    models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
         AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
         AccountsProxy,
@@ -42,7 +42,11 @@ impl AccountsClient {
     }
 
     pub async fn start_authentication(&mut self, provider: &Provider) -> Result<String> {
-        self.proxy.start_authentication(&provider.to_string()).await
+        self.proxy.start_authentication(provider).await
+    }
+
+    pub async fn list_providers(&self) -> Result<Vec<DbusProviderInfo>> {
+        self.proxy.list_providers().await
     }
 
     pub async fn complete_authentication(

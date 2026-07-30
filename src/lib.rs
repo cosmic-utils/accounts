@@ -2,9 +2,11 @@ pub mod clients;
 pub mod config;
 pub mod models;
 pub mod proxy;
+pub mod registry;
 mod service;
 
 pub use clients::AccountsClient;
+pub use registry::{OAuthManifest, ProviderManifest, ProviderManifestInfo, ProviderRegistry};
 pub use service::*;
 
 // Re-exports
