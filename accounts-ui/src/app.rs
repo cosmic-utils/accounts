@@ -38,6 +38,10 @@ pub struct AppModel {
     accounts: Vec<Account>,
     // Providers list, fetched from the daemon's manifest registry.
     providers: Vec<DbusProviderInfo>,
+    // Bytes fetched for providers whose manifest `icon` is a remote URL, keyed
+    // by that URL. Populated asynchronously; absent entries render the
+    // fallback icon until the fetch completes (or fails).
+    icon_cache: HashMap<String, Handle>,
     selected_account: Option<Account>,
 }
 
@@ -70,6 +74,7 @@ pub enum Message {
     SetClient(Option<AccountsClient>),
     // Providers
     SetProviders(Vec<DbusProviderInfo>),
+    ProviderIconLoaded(String, Option<Vec<u8>>),
     // Auth
     StartAuth(String),
 }
@@ -123,11 +128,7 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(Self::provider_icon(
-                        &provider.id,
-                        provider.icon.as_deref(),
-                        24,
-                    ))
+                    .push(self.provider_icon(&provider.id, provider.icon.as_deref(), 24))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -194,11 +195,7 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(Self::provider_icon(
-                        &provider.id,
-                        provider.icon.as_deref(),
-                        24,
-                    ))
+                    .push(self.provider_icon(&provider.id, provider.icon.as_deref(), 24))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -242,14 +239,16 @@ impl<'a> AppModel {
         };
 
         let provider_header = widget::Row::new()
-            .push(Self::provider_icon(
-                &account.provider,
-                self.providers
-                    .iter()
-                    .find(|p| p.id == account.provider)
-                    .and_then(|p| p.icon.as_deref()),
-                60,
-            ))
+            .push(
+                self.provider_icon(
+                    &account.provider,
+                    self.providers
+                        .iter()
+                        .find(|p| p.id == account.provider)
+                        .and_then(|p| p.icon.as_deref()),
+                    60,
+                ),
+            )
             .push(
                 widget::Column::new()
                     .push(widget::text::title1(account.provider.to_string()))
@@ -322,19 +321,31 @@ impl<'a> AppModel {
             .spacing(spacing().space_xxs)
     }
 
-    /// Prefers the icon a provider's manifest declares (an absolute file path,
-    /// or a freedesktop icon-theme name), falling back to a hardcoded lookup for
-    /// the two reference providers, then a generic icon for anything else — an
+    /// Prefers the icon a provider's manifest declares — a remote URL (fetched
+    /// asynchronously and cached in `self.icon_cache`; renders the fallback
+    /// until the fetch completes), an absolute file path, or a freedesktop
+    /// icon-theme name — falling back to a hardcoded lookup for the two
+    /// reference providers, then a generic icon for anything else. An
     /// unrecognized id (including any third-party provider) never fails to render.
     fn provider_icon(
+        &self,
         provider_id: &str,
         icon: Option<&str>,
         size: u16,
     ) -> Element<'static, Message> {
         if let Some(icon) = icon {
-            return if icon.starts_with('/') {
+            if icon.starts_with("http://") || icon.starts_with("https://") {
+                if let Some(handle) = self.icon_cache.get(icon) {
+                    return widget::image(handle.clone())
+                        .width(size)
+                        .height(size)
+                        .into();
+                }
+                // Not fetched yet (or the fetch failed) — fall through to the
+                // hardcoded/generic fallback below rather than rendering nothing.
+            } else if icon.starts_with('/') {
                 let path = std::path::PathBuf::from(icon);
-                if path.extension().and_then(|e| e.to_str()) == Some("svg") {
+                return if path.extension().and_then(|e| e.to_str()) == Some("svg") {
                     widget::svg(widget::svg::Handle::from_path(path))
                         .width(size)
                         .height(size)
@@ -344,10 +355,10 @@ impl<'a> AppModel {
                         .width(size)
                         .height(size)
                         .into()
-                }
+                };
             } else {
-                widget::icon::from_name(icon).size(size).into()
-            };
+                return widget::icon::from_name(icon).size(size).into();
+            }
         }
 
         match provider_id {
@@ -408,6 +419,7 @@ impl<'a> cosmic::Application for AppModel {
             client: None,
             accounts: Vec::new(),
             providers: Vec::new(),
+            icon_cache: HashMap::new(),
             selected_account: None,
         };
 
@@ -864,7 +876,35 @@ impl<'a> cosmic::Application for AppModel {
                 }
             }
             Message::SetProviders(providers) => {
+                for provider in &providers {
+                    let Some(icon) = &provider.icon else {
+                        continue;
+                    };
+                    if !(icon.starts_with("http://") || icon.starts_with("https://"))
+                        || self.icon_cache.contains_key(icon)
+                    {
+                        continue;
+                    }
+                    let url = icon.clone();
+                    tasks.push(Task::perform(
+                        async move {
+                            let bytes = reqwest::get(&url).await.ok()?.bytes().await.ok()?.to_vec();
+                            Some((url, bytes))
+                        },
+                        |result| match result {
+                            Some((url, bytes)) => {
+                                cosmic::Action::App(Message::ProviderIconLoaded(url, Some(bytes)))
+                            }
+                            None => cosmic::action::none(),
+                        },
+                    ));
+                }
                 self.providers = providers;
+            }
+            Message::ProviderIconLoaded(url, bytes) => {
+                if let Some(bytes) = bytes {
+                    self.icon_cache.insert(url, Handle::from_bytes(bytes));
+                }
             }
             Message::StartAuth(provider) => {
                 tracing::info!(
