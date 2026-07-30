@@ -102,16 +102,27 @@ A third party ships a binary, a `.service` D-Bus activation file, and a manifest
 
 ## Build order
 
-1. Manifest schema (`accounts` crate) + `ProviderRegistry` (`accounts-daemon`), loading `google`/`microsoft` manifests.
-2. `list_providers()` on the `Accounts` D-Bus interface; switch `accounts-ui`'s provider picker to it. **Capability advertisement is done here.**
-3. `Provider1` D-Bus interface definition.
-4. `accounts-provider-google` / `accounts-provider-microsoft` crates implementing `Provider1`.
-5. Wire `auth.rs` and `services/mod.rs` to call providers over D-Bus; delete the old match arms.
-6. Delete the `Provider` enum's compiled-in variants entirely, along with `accounts-daemon/data/providers/*.toml` (replaced by the XDG manifests).
-7. Document the manifest format + `Provider1` interface for third-party authors.
+1. ~~Manifest schema (`accounts` crate) + `ProviderRegistry` (`accounts-daemon`), loading `google`/`microsoft` manifests.~~ **Done** — `src/registry.rs`.
+2. ~~`list_providers()` on the `Accounts` D-Bus interface; switch `accounts-ui`'s provider picker to it.~~ **Done** — `src/proxy.rs`, `accounts-daemon/src/account.rs`, `accounts-ui/src/app.rs`.
+3. ~~`Provider1` D-Bus interface definition.~~ **Done** — `src/proxy.rs`.
+4. ~~`accounts-provider-google` / `accounts-provider-microsoft` crates implementing `Provider1`.~~ **Done.**
+5. ~~Wire `auth.rs` and `services/mod.rs` to call providers over D-Bus; delete the old match arms.~~ **Done** — `accounts-daemon/src/auth.rs`, `accounts-daemon/src/services/calendar.rs`.
+6. ~~Delete the `Provider` enum's compiled-in variants entirely.~~ **Done** — `Provider` is now `pub type Provider = String` in `src/models/provider.rs`. `accounts-daemon/data/providers/*.toml` were rewritten to the new manifest schema rather than deleted, since that directory doubles as `ProviderRegistry`'s repo-relative dev fallback (see `search_dirs()`), which lets `cargo run` work without an installed manifest.
+7. Document the manifest format + `Provider1` interface for third-party authors — see below.
+
+**Not migrated in this pass:** `accounts-daemon/src/services/mail.rs`, `contacts.rs`, `todo.rs` were already commented out of `services/mod.rs` before this work (disabled, future work per `ARCHITECTURE.md`). They still reference the old `Provider` enum and won't compile if re-enabled as-is; only `calendar.rs`, the one active service, was migrated to call through `Provider1`.
+
+## Writing a third-party provider
+
+1. Write a manifest (`id`, `name`, `dbus_name`, `services`, `[oauth]` block) — see the example in §1. Install it to `$XDG_DATA_HOME/accounts/providers/<id>.toml` (or `/usr/share/accounts/providers/` for a system package).
+2. Implement the `Provider1` D-Bus interface (`accounts::proxy::Provider1Proxy` documents the client side; implement the server side directly with `zbus::interface`, following `accounts-provider-google/src/main.rs` as a reference — it's under 100 lines).
+   - `get_user_info(access_token) -> HashMap<String, String>`: keys `display_name`, `username`, optionally `email`.
+   - `get_service_config(service) -> HashMap<String, String>`: for `"calendar"`, keys `uri` and `accept_ssl_errors`.
+3. Register the provider's well-known D-Bus name (matching the manifest's `dbus_name`) — ship a `.service` file (see `accounts-provider-google/data/*.service`) for D-Bus activation, or run the process persistently.
+4. That's it — no changes to `accounts`, `accounts-daemon`, or `accounts-ui`. The provider appears in `accounts-ui`'s Add Account grid via `list_providers()` as soon as the manifest is in a searched directory.
 
 ## Verification
 
-- Unit tests for manifest parsing (`ProviderRegistry` loading from a temp XDG dir).
-- Integration test: spin up a fake `Provider1` D-Bus service (test double), run the full add-account flow against it, assert `accounts-daemon` never calls out to a real network endpoint for provider-specific data.
-- Manual test: confirm Google and Microsoft account flows work end-to-end via `accounts-ui` after the rewrite.
+- `cargo build -p accounts -p accounts-daemon -p accounts-provider-google -p accounts-provider-microsoft` — all four compile cleanly.
+- Manual test: run `accounts-daemon`, `accounts-provider-google`, and `accounts-provider-microsoft` on the session bus, call `list_providers()` and confirm both show up with their declared services without either provider process needing to be involved. Then exercise the add-account flow with real OAuth client credentials to confirm `get_user_info`/`get_service_config` round-trip correctly.
+- `accounts-ui` has pre-existing, unrelated build failures against the currently-pinned `libcosmic` git revision (see `ARCHITECTURE.md` Known Gaps) — the provider-plugin changes there were verified by confirming they introduce zero additional compiler errors on top of that baseline (`git stash` diff comparison).
