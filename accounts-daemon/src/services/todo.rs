@@ -1,23 +1,47 @@
 use std::collections::HashMap;
 
+use accounts::{
+    AccountService, ServiceConfig,
+    models::{Account, Service},
+    proxy::Provider1Proxy,
+};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use zbus::{
+    Connection,
     fdo::{Error, Result},
     interface,
 };
 
-use crate::{
-    models::{Account, Provider},
-    services::{Service, ServiceConfig},
-};
+use crate::CONNECTION;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TodoService {
-    account_id: String,
+    account: Account,
 }
 
 impl TodoService {
-    pub fn new(account_id: String) -> Self {
-        Self { account_id }
+    pub fn new(account: Account) -> Self {
+        Self { account }
+    }
+
+    /// Connection info for this account's tasks service comes from the
+    /// account's provider process, not from anything hardcoded here.
+    async fn fetch_config(&self) -> Result<HashMap<String, String>> {
+        let registry = crate::REGISTRY
+            .get()
+            .ok_or_else(|| Error::Failed("Provider registry not loaded".to_string()))?;
+        let manifest = registry
+            .get(&self.account.provider)
+            .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", self.account.provider)))?;
+
+        let connection = Connection::session().await?;
+        let proxy = Provider1Proxy::new(&connection, manifest.provider.dbus_name.clone()).await?;
+
+        proxy
+            .get_service_config("todo")
+            .await
+            .map_err(|e| Error::Failed(format!("Provider did not return todo config: {e}")))
     }
 }
 
@@ -26,18 +50,25 @@ impl TodoService {
     /// ToDo API URI - following GOA's Uri pattern
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
-        if self.account_id.contains("google") {
-            Ok("https://tasks.googleapis.com/tasks/v1/".to_string())
-        } else if self.account_id.contains("microsoft") {
-            Ok("https://graph.microsoft.com/v1.0/me/todo".to_string())
-        } else {
-            Err(Error::Failed("Unsupported provider".to_string()))
-        }
+        let config = self.fetch_config().await?;
+        config
+            .get("uri")
+            .cloned()
+            .ok_or_else(|| Error::Failed("Provider did not return a todo uri".to_string()))
+    }
+
+    #[zbus(property)]
+    async fn accept_ssl_errors(&self) -> Result<bool> {
+        let config = self.fetch_config().await?;
+        Ok(config
+            .get("accept_ssl_errors")
+            .map(|v| v == "true")
+            .unwrap_or(false))
     }
 }
 
 #[async_trait]
-impl Service for TodoService {
+impl AccountService for TodoService {
     fn name(&self) -> &str {
         "Todo"
     }
@@ -47,33 +78,55 @@ impl Service for TodoService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        // Check if the account has todo services
-        matches!(account.provider, Provider::Google | Provider::Microsoft)
+        account.services.contains_key(&Service::Todo)
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
+        let config = self.fetch_config().await?;
         let mut settings = HashMap::new();
-
-        match account.provider {
-            Provider::Google => {
-                settings.insert(
-                    "uri".to_string(),
-                    "https://tasks.googleapis.com/tasks/v1/".into(),
-                );
-            }
-            Provider::Microsoft => {
-                settings.insert(
-                    "uri".to_string(),
-                    "https://graph.microsoft.com/v1.0/me/todo".into(),
-                );
-            }
+        for (key, value) in config {
+            settings.insert(key, value.into());
         }
 
         Ok(ServiceConfig {
             service_type: "Todo".to_string(),
-            provider_type: account.provider.to_string(),
+            provider_type: account.provider.clone(),
             settings,
         })
+    }
+
+    async fn add_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Adding a todo service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .at(
+                    format!("/dev/edfloreshz/Accounts/Todo/{}", self.account.dbus_id()),
+                    self.clone(),
+                )
+                .await?;
+        }
+        Ok(false)
+    }
+
+    async fn remove_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Removing todo service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .remove::<TodoService, String>(format!(
+                    "/dev/edfloreshz/Accounts/Todo/{}",
+                    self.account.dbus_id()
+                ))
+                .await?;
+        }
+        Ok(false)
     }
 
     async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {
