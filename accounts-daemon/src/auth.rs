@@ -17,7 +17,6 @@ use crate::{error::*, storage::CredentialStorage};
 pub struct AuthManager {
     pending_auth: HashMap<String, (String, PkceCodeVerifier)>,
     storage: CredentialStorage,
-    config: AccountsConfig,
     /// Session bus connection used to call out to provider processes over D-Bus.
     /// Kept separate from the daemon's own object-server connection.
     connection: Connection,
@@ -28,7 +27,6 @@ impl AuthManager {
         Ok(Self {
             pending_auth: HashMap::new(),
             storage: CredentialStorage::new().await?,
-            config: AccountsConfig::config(),
             connection: Connection::session().await?,
         })
     }
@@ -111,10 +109,10 @@ impl AuthManager {
 
         let user_info = self.get_user_info(manifest, access_token).await?;
 
-        if self
-            .config
-            .account_exists(&user_info.username, &provider_id)
-        {
+        // Read fresh from disk rather than caching a config snapshot: accounts can be
+        // added/removed by AccountsInterface at any time, and a stale in-memory copy
+        // here would keep reporting a removed account as still existing.
+        if AccountsConfig::config().account_exists(&user_info.username, &provider_id) {
             return Err(Error::AccountAlreadyExists);
         }
 
