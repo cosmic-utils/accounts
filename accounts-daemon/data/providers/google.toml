@@ -3,7 +3,7 @@ id = "google"
 name = "Google"
 dbus_name = "dev.edfloreshz.Accounts.Provider.Google"
 exec = "/usr/bin/accounts-provider-google"
-services = ["Email", "Calendar", "Contacts"]
+services = ["Email", "Calendar", "Contacts", "Todo"]
 
 [oauth]
 client_id = "your-client-id.googleusercontent.com"
@@ -17,6 +17,8 @@ scopes = [
     "profile",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/contacts",
+    "https://www.googleapis.com/auth/tasks",
+    "https://mail.google.com/",
 ]
 
 [oauth.extra_params]

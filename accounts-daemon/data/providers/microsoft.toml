@@ -3,7 +3,7 @@ id = "microsoft"
 name = "Microsoft"
 dbus_name = "dev.edfloreshz.Accounts.Provider.Microsoft"
 exec = "/usr/bin/accounts-provider-microsoft"
-services = ["Email", "Calendar", "Contacts"]
+services = ["Email", "Calendar", "Contacts", "Todo"]
 
 [oauth]
 client_id = "your-client-id"
@@ -18,6 +18,8 @@ scopes = [
     "https://graph.microsoft.com/user.read",
     "https://graph.microsoft.com/calendars.read",
     "https://graph.microsoft.com/contacts.read",
+    "https://graph.microsoft.com/tasks.read",
+    "https://graph.microsoft.com/mail.read",
 ]
 
 [oauth.extra_params]

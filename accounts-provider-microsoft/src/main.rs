@@ -29,18 +29,23 @@ impl MicrosoftProvider {
             )));
         }
 
-        let data: Value = response
-            .json()
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("Invalid response from Microsoft Graph: {e}")))?;
+        let data: Value = response.json().await.map_err(|e| {
+            fdo::Error::Failed(format!("Invalid response from Microsoft Graph: {e}"))
+        })?;
 
         let mut info = HashMap::new();
         info.insert(
             "display_name".to_string(),
-            data["displayName"].as_str().unwrap_or("Unknown").to_string(),
+            data["displayName"]
+                .as_str()
+                .unwrap_or("Unknown")
+                .to_string(),
         );
 
-        let principal = data["userPrincipalName"].as_str().unwrap_or("Unknown").to_string();
+        let principal = data["userPrincipalName"]
+            .as_str()
+            .unwrap_or("Unknown")
+            .to_string();
         info.insert("username".to_string(), principal.clone());
 
         let email = data["mail"]
@@ -63,6 +68,30 @@ impl MicrosoftProvider {
                     "https://outlook.office365.com/".to_string(),
                 );
                 config.insert("accept_ssl_errors".to_string(), "false".to_string());
+            }
+            "todo" => {
+                config.insert(
+                    "uri".to_string(),
+                    "https://graph.microsoft.com/v1.0/me/todo".to_string(),
+                );
+                config.insert("accept_ssl_errors".to_string(), "false".to_string());
+            }
+            "email" => {
+                config.insert("imap_host".to_string(), "outlook.office365.com".to_string());
+                config.insert("imap_supported".to_string(), "true".to_string());
+                config.insert("imap_use_ssl".to_string(), "true".to_string());
+                config.insert("imap_use_tls".to_string(), "false".to_string());
+                config.insert("imap_accept_ssl_errors".to_string(), "false".to_string());
+
+                config.insert("smtp_host".to_string(), "smtp.office365.com".to_string());
+                config.insert("smtp_supported".to_string(), "true".to_string());
+                config.insert("smtp_use_auth".to_string(), "true".to_string());
+                config.insert("smtp_use_ssl".to_string(), "false".to_string());
+                config.insert("smtp_use_tls".to_string(), "true".to_string());
+                config.insert("smtp_accept_ssl_errors".to_string(), "false".to_string());
+                config.insert("smtp_auth_login".to_string(), "false".to_string());
+                config.insert("smtp_auth_plain".to_string(), "false".to_string());
+                config.insert("smtp_auth_xoauth2".to_string(), "true".to_string());
             }
             other => {
                 return Err(fdo::Error::Failed(format!(
