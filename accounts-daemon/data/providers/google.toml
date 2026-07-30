@@ -1,4 +1,11 @@
 [provider]
+id = "google"
+name = "Google"
+dbus_name = "dev.edfloreshz.Accounts.Provider.Google"
+exec = "/usr/bin/accounts-provider-google"
+services = ["Email", "Calendar", "Contacts"]
+
+[oauth]
 client_id = "your-client-id.googleusercontent.com"
 client_secret = "your-client-secret"
 auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -8,8 +15,10 @@ scopes = [
     "openid",
     "email",
     "profile",
-    "https://www.googleapis.com/auth/plus.me",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/contacts",
 ]
-services = ["Email", "Calendar", "Contacts"]
+
+[oauth.extra_params]
+access_type = "offline"
+prompt = "consent"

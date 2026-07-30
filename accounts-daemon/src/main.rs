@@ -1,5 +1,5 @@
 use crate::{account::AccountsInterface, services::ServiceFactory};
-use accounts::{AccountsClient, models::Account};
+use accounts::{AccountsClient, ProviderRegistry, models::Account};
 use axum::{Router, extract::Query, http::StatusCode, response::Html, routing::get};
 use serde::Deserialize;
 use tokio::sync::OnceCell;
@@ -9,7 +9,6 @@ use tracing_subscriber;
 mod account;
 mod auth;
 mod error;
-mod models;
 mod services;
 mod storage;
 
@@ -17,6 +16,10 @@ pub use error::{Error, Result};
 use zbus::Connection;
 
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
+/// Loaded once at startup from the manifest search dirs (see [`ProviderRegistry::search_dirs`]).
+/// Every provider lookup — capability advertisement, OAuth config, provider D-Bus
+/// name — goes through this rather than any compiled-in provider knowledge.
+pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
@@ -32,6 +35,14 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Starting Accounts for COSMIC daemon with integrated HTTP server...");
+
+    REGISTRY
+        .set(ProviderRegistry::load_default())
+        .expect("registry set once at startup");
+    info!(
+        "Loaded {} provider manifest(s)",
+        REGISTRY.get().unwrap().list().len()
+    );
 
     let router = Router::new().route("/callback", get(handle_callback));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")

@@ -2,11 +2,13 @@ use std::collections::HashMap;
 
 use accounts::{
     AccountService, ServiceConfig,
-    models::{Account, Provider, Service},
+    models::{Account, Service},
+    proxy::Provider1Proxy,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use zbus::{
+    Connection,
     fdo::{Error, Result},
     interface,
 };
@@ -22,24 +24,45 @@ impl CalendarService {
     pub fn new(account: Account) -> Self {
         Self { account }
     }
+
+    /// Connection info for this account's calendar service comes from the
+    /// account's provider process, not from anything hardcoded here.
+    async fn fetch_config(&self) -> Result<HashMap<String, String>> {
+        let registry = crate::REGISTRY
+            .get()
+            .ok_or_else(|| Error::Failed("Provider registry not loaded".to_string()))?;
+        let manifest = registry
+            .get(&self.account.provider)
+            .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", self.account.provider)))?;
+
+        let connection = Connection::session().await?;
+        let proxy = Provider1Proxy::new(&connection, manifest.provider.dbus_name.clone()).await?;
+
+        proxy
+            .get_service_config("calendar")
+            .await
+            .map_err(|e| Error::Failed(format!("Provider did not return calendar config: {e}")))
+    }
 }
 
 #[interface(name = "dev.edfloreshz.Accounts.Calendar")]
 impl CalendarService {
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
-        if self.account.provider == Provider::Google {
-            Ok("https://apidata.googleusercontent.com/caldav/v2/".to_string())
-        } else if self.account.provider == Provider::Microsoft {
-            Ok("https://outlook.office365.com/".to_string())
-        } else {
-            Err(Error::Failed("Unsupported provider".to_string()))
-        }
+        let config = self.fetch_config().await?;
+        config
+            .get("uri")
+            .cloned()
+            .ok_or_else(|| Error::Failed("Provider did not return a calendar uri".to_string()))
     }
 
     #[zbus(property)]
     async fn accept_ssl_errors(&self) -> Result<bool> {
-        Ok(false)
+        let config = self.fetch_config().await?;
+        Ok(config
+            .get("accept_ssl_errors")
+            .map(|v| v == "true")
+            .unwrap_or(false))
     }
 }
 
@@ -58,25 +81,15 @@ impl AccountService for CalendarService {
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
+        let config = self.fetch_config().await?;
         let mut settings = HashMap::new();
-
-        match account.provider {
-            Provider::Google => {
-                settings.insert(
-                    "uri".to_string(),
-                    "https://apidata.googleusercontent.com/caldav/v2/".into(),
-                );
-            }
-            Provider::Microsoft => {
-                settings.insert("uri".to_string(), "https://outlook.office365.com/".into());
-            }
+        for (key, value) in config {
+            settings.insert(key, value.into());
         }
-
-        settings.insert("accept_ssl_errors".to_string(), false.into());
 
         Ok(ServiceConfig {
             service_type: "Calendar".to_string(),
-            provider_type: account.provider.to_string(),
+            provider_type: account.provider.clone(),
             settings,
         })
     }
