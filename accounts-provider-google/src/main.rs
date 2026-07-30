@@ -58,6 +58,30 @@ impl GoogleProvider {
                 );
                 config.insert("accept_ssl_errors".to_string(), "false".to_string());
             }
+            "todo" => {
+                config.insert(
+                    "uri".to_string(),
+                    "https://tasks.googleapis.com/tasks/v1/".to_string(),
+                );
+                config.insert("accept_ssl_errors".to_string(), "false".to_string());
+            }
+            "email" => {
+                config.insert("imap_host".to_string(), "imap.gmail.com".to_string());
+                config.insert("imap_supported".to_string(), "true".to_string());
+                config.insert("imap_use_ssl".to_string(), "true".to_string());
+                config.insert("imap_use_tls".to_string(), "false".to_string());
+                config.insert("imap_accept_ssl_errors".to_string(), "false".to_string());
+
+                config.insert("smtp_host".to_string(), "smtp.gmail.com".to_string());
+                config.insert("smtp_supported".to_string(), "true".to_string());
+                config.insert("smtp_use_auth".to_string(), "true".to_string());
+                config.insert("smtp_use_ssl".to_string(), "false".to_string());
+                config.insert("smtp_use_tls".to_string(), "true".to_string());
+                config.insert("smtp_accept_ssl_errors".to_string(), "false".to_string());
+                config.insert("smtp_auth_login".to_string(), "false".to_string());
+                config.insert("smtp_auth_plain".to_string(), "false".to_string());
+                config.insert("smtp_auth_xoauth2".to_string(), "true".to_string());
+            }
             other => {
                 return Err(fdo::Error::Failed(format!(
                     "Google provider does not support service: {other}"
