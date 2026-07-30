@@ -1,8 +1,5 @@
 use accounts::{
-    config::AccountsConfig,
-    models::Credential,
-    proxy::Provider1Proxy,
-    registry::ProviderRegistry,
+    config::AccountsConfig, models::Credential, proxy::Provider1Proxy, registry::ProviderRegistry,
 };
 use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
@@ -40,9 +37,7 @@ impl AuthManager {
         crate::REGISTRY.get().ok_or(Error::InvalidProviderConfig)
     }
 
-    fn oauth_client(
-        manifest: &accounts::ProviderManifest,
-    ) -> Result<BasicClient> {
+    fn oauth_client(manifest: &accounts::ProviderManifest) -> Result<BasicClient> {
         let oauth = &manifest.oauth;
         Ok(BasicClient::new(
             ClientId::new(oauth.client_id.clone()),
@@ -116,7 +111,10 @@ impl AuthManager {
 
         let user_info = self.get_user_info(manifest, access_token).await?;
 
-        if self.config.account_exists(&user_info.username, &provider_id) {
+        if self
+            .config
+            .account_exists(&user_info.username, &provider_id)
+        {
             return Err(Error::AccountAlreadyExists);
         }
 
@@ -158,12 +156,16 @@ impl AuthManager {
             .await
             .map_err(Error::DBus)?;
 
-        let mut info = proxy
-            .get_user_info(access_token)
-            .await
-            .map_err(|e| Error::AuthenticationFailed {
-                reason: format!("Provider {} failed to return user info: {e}", manifest.provider.id),
-            })?;
+        let mut info =
+            proxy
+                .get_user_info(access_token)
+                .await
+                .map_err(|e| Error::AuthenticationFailed {
+                    reason: format!(
+                        "Provider {} failed to return user info: {e}",
+                        manifest.provider.id
+                    ),
+                })?;
 
         Ok(UserInfo {
             display_name: info
@@ -214,7 +216,10 @@ impl AuthManager {
         Ok(())
     }
 
-    pub async fn ensure_credentials(&mut self, account: &mut accounts::models::Account) -> Result<()> {
+    pub async fn ensure_credentials(
+        &mut self,
+        account: &mut accounts::models::Account,
+    ) -> Result<()> {
         let credentials = self
             .storage
             .get_account_credentials(&account.id)
