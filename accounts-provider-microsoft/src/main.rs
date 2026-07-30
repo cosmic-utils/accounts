@@ -76,6 +76,13 @@ impl MicrosoftProvider {
                 );
                 config.insert("accept_ssl_errors".to_string(), "false".to_string());
             }
+            "contacts" => {
+                config.insert(
+                    "uri".to_string(),
+                    "https://outlook.office365.com/".to_string(),
+                );
+                config.insert("accept_ssl_errors".to_string(), "false".to_string());
+            }
             "email" => {
                 config.insert("imap_host".to_string(), "outlook.office365.com".to_string());
                 config.insert("imap_supported".to_string(), "true".to_string());
