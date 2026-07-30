@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::fl;
-use accounts::models::{Account, DbusProviderInfo, Service};
+use accounts::models::{Account, DbusProviderInfo, IconSource, Service};
 use accounts::{AccountsClient, Local, Uuid, zbus};
 use cosmic::app::context_drawer;
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -128,7 +128,7 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(self.provider_icon(&provider.id, provider.icon.as_deref(), 24))
+                    .push(self.provider_icon(&provider.id, provider.icon_source(), 24))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -195,7 +195,7 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(self.provider_icon(&provider.id, provider.icon.as_deref(), 24))
+                    .push(self.provider_icon(&provider.id, provider.icon_source(), 24))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -245,7 +245,7 @@ impl<'a> AppModel {
                     self.providers
                         .iter()
                         .find(|p| p.id == account.provider)
-                        .and_then(|p| p.icon.as_deref()),
+                        .and_then(|p| p.icon_source()),
                     60,
                 ),
             )
@@ -327,37 +327,43 @@ impl<'a> AppModel {
     /// icon-theme name — falling back to a hardcoded lookup for the two
     /// reference providers, then a generic icon for anything else. An
     /// unrecognized id (including any third-party provider) never fails to render.
+    /// `source` comes from `DbusProviderInfo::icon_source()` — classification
+    /// (URL vs. path vs. theme name) is shared with every other D-Bus consumer;
+    /// only the actual rendering below is specific to this toolkit.
     fn provider_icon(
         &self,
         provider_id: &str,
-        icon: Option<&str>,
+        source: Option<IconSource>,
         size: u16,
     ) -> Element<'static, Message> {
-        if let Some(icon) = icon {
-            if icon.starts_with("http://") || icon.starts_with("https://") {
-                if let Some(handle) = self.icon_cache.get(icon) {
-                    return widget::image(handle.clone())
-                        .width(size)
-                        .height(size)
-                        .into();
+        if let Some(source) = source {
+            match source {
+                IconSource::Url(url) => {
+                    if let Some(handle) = self.icon_cache.get(&url) {
+                        return widget::image(handle.clone())
+                            .width(size)
+                            .height(size)
+                            .into();
+                    }
+                    // Not fetched yet (or the fetch failed) — fall through to the
+                    // hardcoded/generic fallback below rather than rendering nothing.
                 }
-                // Not fetched yet (or the fetch failed) — fall through to the
-                // hardcoded/generic fallback below rather than rendering nothing.
-            } else if icon.starts_with('/') {
-                let path = std::path::PathBuf::from(icon);
-                return if path.extension().and_then(|e| e.to_str()) == Some("svg") {
-                    widget::svg(widget::svg::Handle::from_path(path))
-                        .width(size)
-                        .height(size)
-                        .into()
-                } else {
-                    widget::image(Handle::from_path(path))
-                        .width(size)
-                        .height(size)
-                        .into()
-                };
-            } else {
-                return widget::icon::from_name(icon).size(size).into();
+                IconSource::Path(path) => {
+                    return if path.extension().and_then(|e| e.to_str()) == Some("svg") {
+                        widget::svg(widget::svg::Handle::from_path(path))
+                            .width(size)
+                            .height(size)
+                            .into()
+                    } else {
+                        widget::image(Handle::from_path(path))
+                            .width(size)
+                            .height(size)
+                            .into()
+                    };
+                }
+                IconSource::ThemeName(name) => {
+                    return widget::icon::from_name(name.as_str()).size(size).into();
+                }
             }
         }
 
