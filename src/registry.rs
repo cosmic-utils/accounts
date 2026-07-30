@@ -152,6 +152,9 @@ impl ProviderRegistry {
     }
 
     pub fn list_infos(&self) -> Vec<DbusProviderInfo> {
-        self.providers.values().map(ProviderManifest::info).collect()
+        self.providers
+            .values()
+            .map(ProviderManifest::info)
+            .collect()
     }
 }
