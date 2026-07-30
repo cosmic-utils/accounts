@@ -16,6 +16,11 @@ pub use error::{Error, Result};
 use zbus::Connection;
 
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
+/// Must match the `redirect_uri` in every provider manifest's `[oauth]` section,
+/// and the redirect URI registered with each provider (Google Cloud Console /
+/// Entra app registration). Picked from the IANA dynamic/private port range to
+/// avoid colliding with common dev-server ports like 8080.
+const CALLBACK_PORT: u16 = 49173;
 /// Loaded once at startup from the manifest search dirs (see [`ProviderRegistry::search_dirs`]).
 /// Every provider lookup — capability advertisement, OAuth config, provider D-Bus
 /// name — goes through this rather than any compiled-in provider knowledge.
@@ -45,12 +50,12 @@ async fn main() -> Result<()> {
     );
 
     let router = Router::new().route("/callback", get(handle_callback));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", CALLBACK_PORT))
         .await
-        .map_err(|e| Error::Io(e))?;
+        .map_err(Error::Io)?;
 
-    info!("HTTP server will listen on http://127.0.0.1:8080");
-    info!("OAuth callback URL: http://127.0.0.1:8080/callback");
+    info!("HTTP server will listen on http://127.0.0.1:{CALLBACK_PORT}");
+    info!("OAuth callback URL: http://127.0.0.1:{CALLBACK_PORT}/callback");
 
     info!("Setting up D-Bus connection...");
     let service = AccountsInterface::new()
