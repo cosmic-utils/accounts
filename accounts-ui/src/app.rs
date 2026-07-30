@@ -77,7 +77,7 @@ pub enum Message {
 impl<'a> AppModel {
     fn welcome_view(&self) -> impl Into<Element<'_, Message>> {
         // Main container
-        let mut main_column = widget::column()
+        let mut main_column = widget::Column::new()
             .spacing(spacing().space_m)
             .padding([spacing().space_m, spacing().space_xs])
             .align_x(Alignment::Center);
@@ -94,7 +94,7 @@ impl<'a> AppModel {
             .align_x(Horizontal::Center)
             .class(cosmic::style::Text::Accent);
 
-        let header_section = widget::column()
+        let header_section = widget::Column::new()
             .spacing(spacing().space_xs)
             .align_x(Alignment::Center)
             .push(icon)
@@ -112,14 +112,14 @@ impl<'a> AppModel {
 
         // Providers section
         if !self.providers.is_empty() {
-            let mut providers_row = widget::row().spacing(spacing().space_s);
+            let mut providers_row = widget::Row::new().spacing(spacing().space_s);
             let mut current_row_count = 0;
             let max_per_row = 3;
-            let mut providers_column = widget::column().spacing(spacing().space_xs);
+            let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
 
             for provider in &self.providers {
                 // Add provider icon if available
-                let provider_button = widget::row()
+                let provider_button = widget::Row::new()
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
@@ -134,7 +134,7 @@ impl<'a> AppModel {
                 if current_row_count >= max_per_row {
                     providers_column = providers_column
                         .push(widget::container(providers_row).center_x(Length::Fill));
-                    providers_row = widget::row().spacing(spacing().space_s);
+                    providers_row = widget::Row::new().spacing(spacing().space_s);
                     current_row_count = 0;
                 }
             }
@@ -170,7 +170,7 @@ impl<'a> AppModel {
 
     fn add_account_dialog(&self) -> impl Into<Element<'_, Message>> {
         // Main container
-        let mut main_column = widget::column()
+        let mut main_column = widget::Column::new()
             .spacing(spacing().space_m)
             .padding([spacing().space_m, spacing().space_xs])
             .align_x(Alignment::Center);
@@ -179,14 +179,14 @@ impl<'a> AppModel {
 
         // Providers section
         if !self.providers.is_empty() {
-            let mut providers_row = widget::row().spacing(spacing().space_s);
+            let mut providers_row = widget::Row::new().spacing(spacing().space_s);
             let mut current_row_count = 0;
             let max_per_row = 3;
-            let mut providers_column = widget::column().spacing(spacing().space_xs);
+            let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
 
             for provider in &self.providers {
                 // Add provider icon if available
-                let provider_button = widget::row()
+                let provider_button = widget::Row::new()
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
@@ -201,7 +201,7 @@ impl<'a> AppModel {
                 if current_row_count >= max_per_row {
                     providers_column = providers_column
                         .push(widget::container(providers_row).center_x(Length::Fill));
-                    providers_row = widget::row().spacing(spacing().space_s);
+                    providers_row = widget::Row::new().spacing(spacing().space_s);
                     current_row_count = 0;
                 }
             }
@@ -230,13 +230,13 @@ impl<'a> AppModel {
 
     fn account_view(&self) -> impl Into<Element<'_, Message>> {
         let Some(account) = &self.selected_account else {
-            return widget::column().spacing(spacing().space_xs);
+            return widget::Column::new().spacing(spacing().space_xs);
         };
 
-        let provider_header = widget::row()
+        let provider_header = widget::Row::new()
             .push(Self::provider_icon(&account.provider, 60))
             .push(
-                widget::column()
+                widget::Column::new()
                     .push(widget::text::title1(account.provider.to_string()))
                     .push(widget::text::caption_heading(account.username.to_string())),
             )
@@ -299,7 +299,7 @@ impl<'a> AppModel {
             ));
         }
 
-        widget::column()
+        widget::Column::new()
             .push(provider_header)
             .push(account_state)
             .push(account_details)
@@ -457,8 +457,8 @@ impl<'a> cosmic::Application for AppModel {
 
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
         self.selected_account.as_ref().map(|account| {
-            widget::row()
-                .push(widget::horizontal_space())
+            widget::Row::new()
+                .push(widget::space::horizontal())
                 .push(
                     widget::button::standard(fl!("remove"))
                         .class(cosmic::style::Button::Destructive)
@@ -484,9 +484,9 @@ impl<'a> cosmic::Application for AppModel {
         };
 
         let toaster =
-            widget::row::row().push(widget::toaster(&self.toasts, widget::horizontal_space()));
+            widget::Row::new().push(widget::toaster(&self.toasts, widget::space::horizontal()));
 
-        widget::column()
+        widget::Column::new()
             .push(widget::scrollable(content))
             .push(toaster)
             .padding(spacing().space_xxs)
@@ -500,28 +500,24 @@ impl<'a> cosmic::Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
-
-        let Some(client) = self.client.clone() else {
+        if self.client.is_none() {
             return Subscription::none();
-        };
-        let account_changed_client = client.clone();
-        let account_removed_client = client.clone();
-        let account_exists_client = client.clone();
+        }
 
+        // `Subscription::run_with` takes a plain `fn(&D) -> S` (no captures), so each
+        // subscription connects its own `AccountsClient` rather than closing over `self.client`.
         Subscription::batch(vec![
-            // Create a subscription which emits updates through a channel.
-            Subscription::run_with_id(
-                std::any::TypeId::of::<MySubscription>(),
-                cosmic::iced::stream::channel(4, move |mut channel| async move {
+            Subscription::run_with("subscription-channel", |_: &&str| {
+                stream::channel(4, |mut channel: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
                     _ = channel.send(Message::SubscriptionChannel).await;
-
                     futures_util::future::pending().await
-                }),
-            ),
-            Subscription::run_with_id(
-                "account_added",
-                stream::channel(1, move |mut output| async move {
+                })
+            }),
+            Subscription::run_with("account_added", |_: &&str| {
+                stream::channel(1, |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let Ok(client) = AccountsClient::new().await else {
+                        return;
+                    };
                     if let Ok(mut account_added_stream) = client.receive_account_added().await {
                         while let Some(account_added) = account_added_stream.next().await {
                             let args = account_added.args().expect("Error parsing arguments");
@@ -536,13 +532,14 @@ impl<'a> cosmic::Application for AppModel {
                             }
                         }
                     }
-                }),
-            ),
-            Subscription::run_with_id(
-                "account_changed",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_changed_stream) =
-                        account_changed_client.receive_account_changed().await
+                })
+            }),
+            Subscription::run_with("account_changed", |_: &&str| {
+                stream::channel(1, |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let Ok(client) = AccountsClient::new().await else {
+                        return;
+                    };
+                    if let Ok(mut account_changed_stream) = client.receive_account_changed().await
                     {
                         while let Some(_) = account_changed_stream.next().await {
                             if let Err(err) = output.send(Message::LoadAccounts).await {
@@ -550,13 +547,14 @@ impl<'a> cosmic::Application for AppModel {
                             }
                         }
                     }
-                }),
-            ),
-            Subscription::run_with_id(
-                "account_removed",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_removed_stream) =
-                        account_removed_client.receive_account_removed().await
+                })
+            }),
+            Subscription::run_with("account_removed", |_: &&str| {
+                stream::channel(1, |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let Ok(client) = AccountsClient::new().await else {
+                        return;
+                    };
+                    if let Ok(mut account_removed_stream) = client.receive_account_removed().await
                     {
                         while let Some(_) = account_removed_stream.next().await {
                             if let Err(err) = output.send(Message::LoadAccounts).await {
@@ -564,22 +562,22 @@ impl<'a> cosmic::Application for AppModel {
                             }
                         }
                     }
-                }),
-            ),
-            Subscription::run_with_id(
-                "account_exists",
-                stream::channel(1, move |mut output| async move {
-                    if let Ok(mut account_exists_stream) =
-                        account_exists_client.receive_account_exists().await
-                    {
+                })
+            }),
+            Subscription::run_with("account_exists", |_: &&str| {
+                stream::channel(1, |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
+                    let Ok(client) = AccountsClient::new().await else {
+                        return;
+                    };
+                    if let Ok(mut account_exists_stream) = client.receive_account_exists().await {
                         while let Some(_) = account_exists_stream.next().await {
                             if let Err(err) = output.send(Message::AccountExists).await {
                                 tracing::warn!("failed to send message from subscription: {}", err);
                             }
                         }
                     }
-                }),
-            ),
+                })
+            }),
         ])
     }
 
@@ -848,7 +846,7 @@ impl AppModel {
             .on_press(Message::OpenRepositoryUrl)
             .padding(0);
 
-        widget::column()
+        widget::Column::new()
             .push(icon)
             .push(title)
             .push(link)
