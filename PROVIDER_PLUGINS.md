@@ -67,13 +67,17 @@ Each provider process implements one interface, kept intentionally small — onl
 #[interface(name = "dev.edfloreshz.Accounts.Provider1")]
 trait Provider {
     // Given a fresh access token, return normalized user info (display name, email, username)
-    async fn get_user_info(&self, access_token: &str) -> Result<DbusUserInfo>;
+    async fn get_user_info(&self, access_token: &str) -> Result<HashMap<String, String>>;
 
-    // Given a fresh access token and a Service, return that service's connection info
-    // (e.g. CalDAV URI for Calendar) — replaces today's services/*.rs match arms
-    async fn get_service_config(&self, access_token: &str, service: DbusService) -> Result<ServiceConfig>;
+    // Given a service id ("calendar", "todo", "email"), return that service's static
+    // connection info (e.g. CalDAV URI for Calendar) — replaces today's services/*.rs match arms.
+    // No token needed: this is provider/service configuration, not per-account data.
+    async fn get_service_config(&self, service: &str) -> Result<HashMap<String, String>>;
 }
 ```
+
+(As implemented, both methods return a plain `HashMap<String, String>` rather than dedicated
+dict-struct types — simpler to extend per-service without redefining the D-Bus signature.)
 
 Explicitly *not* in this interface: token exchange/refresh (stays generic OAuth2 in `accounts-daemon`), and storage (stays in `accounts-daemon`'s `CredentialStorage`). Providers are stateless request/response services — they receive a token, do one HTTPS call, return normalized data, and can be killed at any time.
 
@@ -110,14 +114,17 @@ A third party ships a binary, a `.service` D-Bus activation file, and a manifest
 6. ~~Delete the `Provider` enum's compiled-in variants entirely.~~ **Done** — `Provider` is now `pub type Provider = String` in `src/models/provider.rs`. `accounts-daemon/data/providers/*.toml` were rewritten to the new manifest schema rather than deleted, since that directory doubles as `ProviderRegistry`'s repo-relative dev fallback (see `search_dirs()`), which lets `cargo run` work without an installed manifest.
 7. Document the manifest format + `Provider1` interface for third-party authors — see below.
 
-**Not migrated in this pass:** `accounts-daemon/src/services/mail.rs`, `contacts.rs`, `todo.rs` were already commented out of `services/mod.rs` before this work (disabled, future work per `ARCHITECTURE.md`). They still reference the old `Provider` enum and won't compile if re-enabled as-is; only `calendar.rs`, the one active service, was migrated to call through `Provider1`.
+**Update:** a follow-up pass migrated `mail.rs` and `todo.rs` to the same `Provider1`-backed pattern as `calendar.rs` — see `ARCHITECTURE.md`. `contacts.rs` remains commented out and still references the old `Provider` enum; it wasn't in scope for that pass.
 
 ## Writing a third-party provider
 
 1. Write a manifest (`id`, `name`, `dbus_name`, `services`, `[oauth]` block) — see the example in §1. Install it to `$XDG_DATA_HOME/accounts/providers/<id>.toml` (or `/usr/share/accounts/providers/` for a system package).
 2. Implement the `Provider1` D-Bus interface (`accounts::proxy::Provider1Proxy` documents the client side; implement the server side directly with `zbus::interface`, following `accounts-provider-google/src/main.rs` as a reference — it's under 100 lines).
    - `get_user_info(access_token) -> HashMap<String, String>`: keys `display_name`, `username`, optionally `email`.
-   - `get_service_config(service) -> HashMap<String, String>`: for `"calendar"`, keys `uri` and `accept_ssl_errors`.
+   - `get_service_config(service) -> HashMap<String, String>`, per supported service:
+     - `"calendar"` / `"todo"`: keys `uri`, `accept_ssl_errors`.
+     - `"email"`: keys `imap_host`, `imap_supported`, `imap_use_ssl`, `imap_use_tls`, `imap_accept_ssl_errors`, `smtp_host`, `smtp_supported`, `smtp_use_auth`, `smtp_use_ssl`, `smtp_use_tls`, `smtp_accept_ssl_errors`, `smtp_auth_login`, `smtp_auth_plain`, `smtp_auth_xoauth2` (all string-typed; booleans as `"true"`/`"false"`). Identity fields (email address, display name, IMAP/SMTP username) are answered by the daemon from the account itself, not the provider.
+   - A provider only needs to implement the services it declares in its manifest — return an error for anything else, as the reference providers do.
 3. Register the provider's well-known D-Bus name (matching the manifest's `dbus_name`) — ship a `.service` file (see `accounts-provider-google/data/*.service`) for D-Bus activation, or run the process persistently.
 4. That's it — no changes to `accounts`, `accounts-daemon`, or `accounts-ui`. The provider appears in `accounts-ui`'s Add Account grid via `list_providers()` as soon as the manifest is in a searched directory.
 
