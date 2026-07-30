@@ -38,6 +38,10 @@ pub struct ProviderManifestInfo {
     #[serde(default)]
     pub exec: String,
     pub services: Vec<String>,
+    /// Either an absolute path to an icon file or a freedesktop icon-theme
+    /// name. Optional — the UI falls back to a generic icon if unset.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 /// A provider manifest: everything the daemon needs to know about a provider
@@ -65,6 +69,7 @@ impl ProviderManifest {
             id: self.provider.id.clone(),
             name: self.provider.name.clone(),
             services: self.provider.services.clone(),
+            icon: self.provider.icon.clone(),
         }
     }
 }

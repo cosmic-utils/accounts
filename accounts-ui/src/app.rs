@@ -123,7 +123,11 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(Self::provider_icon(&provider.id, 24))
+                    .push(Self::provider_icon(
+                        &provider.id,
+                        provider.icon.as_deref(),
+                        24,
+                    ))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -190,7 +194,11 @@ impl<'a> AppModel {
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
                     .align_y(Alignment::Center)
-                    .push(Self::provider_icon(&provider.id, 24))
+                    .push(Self::provider_icon(
+                        &provider.id,
+                        provider.icon.as_deref(),
+                        24,
+                    ))
                     .push(widget::text(provider.name.clone()))
                     .apply(widget::button::custom)
                     .on_press(Message::StartAuth(provider.id.clone()));
@@ -234,7 +242,14 @@ impl<'a> AppModel {
         };
 
         let provider_header = widget::Row::new()
-            .push(Self::provider_icon(&account.provider, 60))
+            .push(Self::provider_icon(
+                &account.provider,
+                self.providers
+                    .iter()
+                    .find(|p| p.id == account.provider)
+                    .and_then(|p| p.icon.as_deref()),
+                60,
+            ))
             .push(
                 widget::Column::new()
                     .push(widget::text::title1(account.provider.to_string()))
@@ -307,10 +322,34 @@ impl<'a> AppModel {
             .spacing(spacing().space_xxs)
     }
 
-    /// Icons are a cosmetic lookup by provider id, not a coupling to specific
-    /// providers: an unrecognized id (including any third-party provider) falls
-    /// back to a generic icon rather than failing to render.
-    fn provider_icon(provider_id: &str, size: u16) -> Element<'static, Message> {
+    /// Prefers the icon a provider's manifest declares (an absolute file path,
+    /// or a freedesktop icon-theme name), falling back to a hardcoded lookup for
+    /// the two reference providers, then a generic icon for anything else — an
+    /// unrecognized id (including any third-party provider) never fails to render.
+    fn provider_icon(
+        provider_id: &str,
+        icon: Option<&str>,
+        size: u16,
+    ) -> Element<'static, Message> {
+        if let Some(icon) = icon {
+            return if icon.starts_with('/') {
+                let path = std::path::PathBuf::from(icon);
+                if path.extension().and_then(|e| e.to_str()) == Some("svg") {
+                    widget::svg(widget::svg::Handle::from_path(path))
+                        .width(size)
+                        .height(size)
+                        .into()
+                } else {
+                    widget::image(Handle::from_path(path))
+                        .width(size)
+                        .height(size)
+                        .into()
+                }
+            } else {
+                widget::icon::from_name(icon).size(size).into()
+            };
+        }
+
         match provider_id {
             "google" => widget::image(Handle::from_bytes(
                 include_bytes!("../resources/img/google.png").to_vec(),
