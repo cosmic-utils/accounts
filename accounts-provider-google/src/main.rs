@@ -65,6 +65,13 @@ impl GoogleProvider {
                 );
                 config.insert("accept_ssl_errors".to_string(), "false".to_string());
             }
+            "contacts" => {
+                config.insert(
+                    "uri".to_string(),
+                    "https://www.googleapis.com/.well-known/carddav".to_string(),
+                );
+                config.insert("accept_ssl_errors".to_string(), "false".to_string());
+            }
             "email" => {
                 config.insert("imap_host".to_string(), "imap.gmail.com".to_string());
                 config.insert("imap_supported".to_string(), "true".to_string());

@@ -1,23 +1,47 @@
 use std::collections::HashMap;
 
+use accounts::{
+    AccountService, ServiceConfig,
+    models::{Account, Service},
+    proxy::Provider1Proxy,
+};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use zbus::{
+    Connection,
     fdo::{Error, Result},
     interface,
 };
 
-use crate::{
-    models::{Account, Provider, Service},
-    services::{Service, ServiceConfig},
-};
+use crate::CONNECTION;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContactsService {
-    account_id: String,
+    account: Account,
 }
 
 impl ContactsService {
-    pub fn new(account_id: String) -> Self {
-        Self { account_id }
+    pub fn new(account: Account) -> Self {
+        Self { account }
+    }
+
+    /// Connection info for this account's contacts service comes from the
+    /// account's provider process, not from anything hardcoded here.
+    async fn fetch_config(&self) -> Result<HashMap<String, String>> {
+        let registry = crate::REGISTRY
+            .get()
+            .ok_or_else(|| Error::Failed("Provider registry not loaded".to_string()))?;
+        let manifest = registry
+            .get(&self.account.provider)
+            .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", self.account.provider)))?;
+
+        let connection = Connection::session().await?;
+        let proxy = Provider1Proxy::new(&connection, manifest.provider.dbus_name.clone()).await?;
+
+        proxy
+            .get_service_config("contacts")
+            .await
+            .map_err(|e| Error::Failed(format!("Provider did not return contacts config: {e}")))
     }
 }
 
@@ -25,24 +49,26 @@ impl ContactsService {
 impl ContactsService {
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
-        if self.account_id.contains("google") {
-            Ok("https://www.googleapis.com/.well-known/carddav".to_string())
-        } else if self.account_id.contains("microsoft") {
-            Ok("https://outlook.office365.com/".to_string())
-        } else {
-            Err(Error::Failed("Unsupported provider".to_string()))
-        }
+        let config = self.fetch_config().await?;
+        config
+            .get("uri")
+            .cloned()
+            .ok_or_else(|| Error::Failed("Provider did not return a contacts uri".to_string()))
     }
 
     /// Whether to accept SSL errors - matches GOA's AcceptSslErrors
     #[zbus(property)]
     async fn accept_ssl_errors(&self) -> Result<bool> {
-        Ok(false)
+        let config = self.fetch_config().await?;
+        Ok(config
+            .get("accept_ssl_errors")
+            .map(|v| v == "true")
+            .unwrap_or(false))
     }
 }
 
 #[async_trait]
-impl Service for ContactsService {
+impl AccountService for ContactsService {
     fn name(&self) -> &str {
         "Contacts"
     }
@@ -56,27 +82,54 @@ impl Service for ContactsService {
     }
 
     async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
+        let config = self.fetch_config().await?;
         let mut settings = HashMap::new();
-
-        match account.provider {
-            Provider::Google => {
-                settings.insert(
-                    "uri".to_string(),
-                    "https://www.googleapis.com/.well-known/carddav".into(),
-                );
-            }
-            Provider::Microsoft => {
-                settings.insert("uri".to_string(), "https://outlook.office365.com/".into());
-            }
+        for (key, value) in config {
+            settings.insert(key, value.into());
         }
-
-        settings.insert("accept_ssl_errors".to_string(), false.into());
 
         Ok(ServiceConfig {
             service_type: "Contacts".to_string(),
-            provider_type: account.provider.to_string(),
+            provider_type: account.provider.clone(),
             settings,
         })
+    }
+
+    async fn add_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Adding a contacts service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .at(
+                    format!(
+                        "/dev/edfloreshz/Accounts/Contacts/{}",
+                        self.account.dbus_id()
+                    ),
+                    self.clone(),
+                )
+                .await?;
+        }
+        Ok(false)
+    }
+
+    async fn remove_service(&self) -> Result<bool> {
+        tracing::info!(
+            "Removing contacts service for account {}",
+            self.account.dbus_id()
+        );
+        if let Some(connection) = CONNECTION.get() {
+            connection
+                .object_server()
+                .remove::<ContactsService, String>(format!(
+                    "/dev/edfloreshz/Accounts/Contacts/{}",
+                    self.account.dbus_id()
+                ))
+                .await?;
+        }
+        Ok(false)
     }
 
     async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {

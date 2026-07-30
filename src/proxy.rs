@@ -66,6 +66,15 @@ pub trait Todo {
 }
 
 #[proxy(
+    interface = "dev.edfloreshz.Accounts.Contacts",
+    default_service = "dev.edfloreshz.Accounts"
+)]
+pub trait Contacts {
+    async fn uri(&self) -> Result<String>;
+    async fn accept_ssl_errors(&self) -> Result<bool>;
+}
+
+#[proxy(
     interface = "dev.edfloreshz.Accounts.Mail",
     default_service = "dev.edfloreshz.Accounts"
 )]

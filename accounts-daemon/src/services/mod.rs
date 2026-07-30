@@ -1,6 +1,5 @@
 mod calendar;
-// mod contacts;
-// pub use contacts::*;
+mod contacts;
 mod mail;
 mod todo;
 
@@ -9,6 +8,7 @@ use accounts::{
     models::{Account, Service},
 };
 pub use calendar::*;
+pub use contacts::*;
 pub use mail::*;
 pub use todo::*;
 
@@ -36,6 +36,12 @@ impl ServiceFactory {
             services.push(Box::new(TodoService::new(account.clone())));
         }
 
+        if let Some((_, value)) = account.services.get_key_value(&Service::Contacts)
+            && *value
+        {
+            services.push(Box::new(ContactsService::new(account.clone())));
+        }
+
         services
     }
 
@@ -44,7 +50,7 @@ impl ServiceFactory {
             Service::Calendar => Some(Box::new(CalendarService::new(account.clone()))),
             Service::Email => Some(Box::new(MailService::new(account.clone()))),
             Service::Todo => Some(Box::new(TodoService::new(account.clone()))),
-            _ => None,
+            Service::Contacts => Some(Box::new(ContactsService::new(account.clone()))),
         }
     }
 }
