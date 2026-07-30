@@ -48,12 +48,48 @@ pub trait Accounts {
 }
 
 #[proxy(
-    interface = "dev.edfloreshz.Accounts",
-    default_service = "dev.edfloreshz.Accounts.Calendar"
+    interface = "dev.edfloreshz.Accounts.Calendar",
+    default_service = "dev.edfloreshz.Accounts"
 )]
 pub trait Calendar {
     async fn uri(&self) -> Result<String>;
     async fn accept_ssl_errors(&self) -> Result<bool>;
+}
+
+#[proxy(
+    interface = "dev.edfloreshz.Accounts.Todo",
+    default_service = "dev.edfloreshz.Accounts"
+)]
+pub trait Todo {
+    async fn uri(&self) -> Result<String>;
+    async fn accept_ssl_errors(&self) -> Result<bool>;
+}
+
+#[proxy(
+    interface = "dev.edfloreshz.Accounts.Mail",
+    default_service = "dev.edfloreshz.Accounts"
+)]
+pub trait Mail {
+    async fn email_address(&self) -> Result<String>;
+    async fn name(&self) -> Result<String>;
+
+    async fn imap_host(&self) -> Result<String>;
+    async fn imap_user_name(&self) -> Result<String>;
+    async fn imap_supported(&self) -> Result<bool>;
+    async fn imap_use_ssl(&self) -> Result<bool>;
+    async fn imap_use_tls(&self) -> Result<bool>;
+    async fn imap_accept_ssl_errors(&self) -> Result<bool>;
+
+    async fn smtp_host(&self) -> Result<String>;
+    async fn smtp_user_name(&self) -> Result<String>;
+    async fn smtp_supported(&self) -> Result<bool>;
+    async fn smtp_use_auth(&self) -> Result<bool>;
+    async fn smtp_use_ssl(&self) -> Result<bool>;
+    async fn smtp_use_tls(&self) -> Result<bool>;
+    async fn smtp_accept_ssl_errors(&self) -> Result<bool>;
+    async fn smtp_auth_login(&self) -> Result<bool>;
+    async fn smtp_auth_plain(&self) -> Result<bool>;
+    async fn smtp_auth_xoauth2(&self) -> Result<bool>;
 }
 
 /// Implemented by each provider process (first-party or third-party). Deliberately
