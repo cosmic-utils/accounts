@@ -216,6 +216,17 @@ impl AccountsInterface {
         emitter.account_exists().await.map_err(Into::into)
     }
 
+    async fn emit_authentication_failed(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        reason: &str,
+    ) -> Result<()> {
+        emitter
+            .authentication_failed(reason)
+            .await
+            .map_err(Into::into)
+    }
+
     #[zbus(signal)]
     async fn account_added(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
 
@@ -227,6 +238,9 @@ impl AccountsInterface {
 
     #[zbus(signal)]
     async fn account_exists(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn authentication_failed(emitter: &SignalEmitter<'_>, reason: &str) -> zbus::Result<()>;
 }
 
 impl AccountsInterface {

@@ -134,15 +134,15 @@ async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> R
     };
 
     if let Some(error) = error {
-        tracing::error!(
-            "Authentication failed: {error}: {}",
-            error_description.as_deref().unwrap_or("no description")
-        );
+        let reason = error_description.unwrap_or(error);
+        tracing::error!("Authentication failed: {reason}");
+        report_authentication_failure(&client, &reason).await;
         return Ok(());
     }
 
     let (Some(authorization_code), Some(csrf_token)) = (code, state) else {
         tracing::warn!("Redirect missing code/state parameters");
+        report_authentication_failure(&client, "The provider did not return a sign-in code").await;
         return Ok(());
     };
 
@@ -156,15 +156,24 @@ async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> R
                 tracing::error!("Failed to add account: {}", err);
             }
         }
-        Err(err) => {
-            if err.to_string().to_lowercase().contains("already exists")
-                && client.account_exists().await.is_ok()
-            {
-                tracing::info!("Account already exists");
+        Err(err) if err.to_string().to_lowercase().contains("already exists") => {
+            tracing::info!("Account already exists");
+            if let Err(err) = client.account_exists().await {
+                tracing::error!("Failed to signal that the account exists: {}", err);
             }
+        }
+        Err(err) => {
             tracing::error!("Failed to authenticate user: {}", err);
+            report_authentication_failure(&client, &err.to_string()).await;
         }
     }
 
     Ok(())
+}
+
+/// Lets the front end know that a sign-in attempt it is waiting on will never complete.
+async fn report_authentication_failure(client: &AccountsClient, reason: &str) {
+    if let Err(err) = client.authentication_failed(reason).await {
+        tracing::error!("Failed to signal the authentication failure: {}", err);
+    }
 }

@@ -31,6 +31,7 @@ pub trait Accounts {
     async fn emit_account_removed(&self, account_id: &str) -> Result<()>;
     async fn emit_account_changed(&self, account_id: &str) -> Result<()>;
     async fn emit_account_exists(&self) -> Result<()>;
+    async fn emit_authentication_failed(&self, reason: &str) -> Result<()>;
 
     #[zbus(signal)]
     fn account_added(account_id: &str) -> Result<()>;
@@ -43,6 +44,9 @@ pub trait Accounts {
 
     #[zbus(signal)]
     fn account_exists() -> Result<()>;
+
+    #[zbus(signal)]
+    fn authentication_failed(reason: &str) -> Result<()>;
 }
 
 #[proxy(

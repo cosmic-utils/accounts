@@ -4,7 +4,7 @@ use crate::{
     models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
         AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
-        AccountsProxy,
+        AccountsProxy, AuthenticationFailedStream,
     },
 };
 use uuid::Uuid;
@@ -124,6 +124,10 @@ impl AccountsClient {
         self.proxy.emit_account_exists().await
     }
 
+    pub async fn authentication_failed(&self, reason: &str) -> Result<()> {
+        self.proxy.emit_authentication_failed(reason).await
+    }
+
     pub async fn receive_account_added(&self) -> zbus::Result<AccountAddedStream> {
         self.proxy.receive_account_added().await
     }
@@ -138,5 +142,9 @@ impl AccountsClient {
 
     pub async fn receive_account_exists(&self) -> zbus::Result<AccountExistsStream> {
         self.proxy.receive_account_exists().await
+    }
+
+    pub async fn receive_authentication_failed(&self) -> zbus::Result<AuthenticationFailedStream> {
+        self.proxy.receive_authentication_failed().await
     }
 }
