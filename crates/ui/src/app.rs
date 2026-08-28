@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+mod dialog;
+mod view;
+
 use crate::fl;
-use accounts_core::models::{Account, DbusProviderInfo, IconSource, Service};
-use accounts_core::{AccountsClient, Local, Uuid, zbus};
+use accounts_core::models::{Account, DbusProviderInfo, Service};
+use accounts_core::{AccountsClient, Uuid, zbus};
 use cosmic::app::context_drawer;
-use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Length, Subscription, stream};
+use cosmic::iced::futures::channel::mpsc::Sender;
+use cosmic::iced::keyboard::{Event as KeyEvent, Key, Modifiers};
+use cosmic::iced::{Event, Subscription, event, stream};
 use cosmic::prelude::*;
 use cosmic::theme::spacing;
-use cosmic::widget::image::Handle;
+use cosmic::widget::menu::Action as _;
 use cosmic::widget::{self, ToastId, menu, nav_bar};
-use cosmic::{cosmic_theme, theme};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, Stream, StreamExt};
 use std::collections::{HashMap, VecDeque};
+
+pub use dialog::DialogPage;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -24,323 +29,60 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     dialog_pages: VecDeque<DialogPage>,
     toasts: widget::Toasts<Message>,
+    about: widget::about::About,
     client: Option<AccountsClient>,
     accounts: Vec<Account>,
     providers: Vec<DbusProviderInfo>,
-    icon_cache: HashMap<String, Handle>,
+    icon_cache: HashMap<String, widget::icon::Handle>,
     selected_account: Option<Account>,
+    /// The sign-in attempt currently waiting on the user's browser, if any.
+    pending_auth: Option<PendingAuth>,
+}
+
+/// A sign-in that has been handed off to the browser and has not come back yet.
+#[derive(Default)]
+struct PendingAuth {
+    /// The authorization URL, once the daemon has produced it. Kept around so the
+    /// user can reopen the page if their browser never appeared.
+    url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    OpenRepositoryUrl,
-    SubscriptionChannel,
+    // Window chrome
     ToggleContextPage(ContextPage),
-    ToggleDialog(DialogPage),
-    #[allow(unused)]
-    UpdateDialog(DialogPage),
+    OpenDialog(DialogPage),
     CloseDialog,
     LaunchUrl(String),
     ShowToast(String),
     CloseToast(ToastId),
-    LoadAccounts,
-    AddAccount(Uuid),
-    DeleteAccount(Uuid),
-    RemoveAccount(Uuid),
-    ToggleService(Service, bool),
-    EnableAccount(bool),
-    AccountSelected(Account),
-    SetAccounts(Vec<Account>),
-    AccountExists,
+    Key(Modifiers, Key),
+
+    // Accounts and providers
     CreateClient,
     SetClient(Option<AccountsClient>),
+    LoadAccounts,
+    SetAccounts(Vec<Account>),
     SetProviders(Vec<DbusProviderInfo>),
-    ProviderIconLoaded(String, Option<Vec<u8>>),
+    ProviderIconLoaded(String, Vec<u8>),
+    SelectAccount(Account),
+    SetAccountEnabled(bool),
+    SetServiceEnabled(Service, bool),
+    RemoveAccount(Uuid),
+    AccountRemoved(Uuid, String),
+
+    // Sign-in
     StartAuth(String),
+    AuthUrlReady(String),
+    OpenAuthUrl,
+    CancelAuth,
+    AuthFailed(String),
+    AccountExists,
+    AccountAdded(Uuid),
+    AccountReady(Account),
 }
 
-impl<'a> AppModel {
-    fn welcome_view(&self) -> impl Into<Element<'_, Message>> {
-        let mut main_column = widget::Column::new()
-            .spacing(spacing().space_m)
-            .padding([spacing().space_m, spacing().space_xs])
-            .align_x(Alignment::Center);
-
-        let icon = widget::svg(widget::svg::Handle::from_memory(APP_ICON))
-            .width(64)
-            .height(64);
-
-        let title = widget::text::title1(fl!("app-title")).align_x(Horizontal::Center);
-
-        let subtitle = widget::text(fl!("manage-online"))
-            .size(16)
-            .align_x(Horizontal::Center)
-            .class(cosmic::style::Text::Accent);
-
-        let header_section = widget::Column::new()
-            .spacing(spacing().space_xs)
-            .align_x(Alignment::Center)
-            .push(icon)
-            .push(title)
-            .push(subtitle);
-
-        main_column = main_column.push(header_section);
-
-        let welcome_text = widget::text(fl!("connect-accounts"))
-            .align_x(Horizontal::Center)
-            .class(cosmic::theme::Text::Default);
-
-        main_column = main_column.push(welcome_text);
-
-        if !self.providers.is_empty() {
-            let mut providers_row = widget::Row::new().spacing(spacing().space_s);
-            let mut current_row_count = 0;
-            let max_per_row = 3;
-            let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
-
-            for provider in &self.providers {
-                let provider_button = widget::Row::new()
-                    .spacing(spacing().space_xxs)
-                    .padding(spacing().space_m)
-                    .align_y(Alignment::Center)
-                    .push(self.provider_icon(&provider.id, provider.icon_source(), 24))
-                    .push(widget::text(provider.name.clone()))
-                    .apply(widget::button::custom)
-                    .on_press(Message::StartAuth(provider.id.clone()));
-
-                providers_row = providers_row.push(provider_button);
-                current_row_count += 1;
-
-                if current_row_count >= max_per_row {
-                    providers_column = providers_column
-                        .push(widget::container(providers_row).center_x(Length::Fill));
-                    providers_row = widget::Row::new().spacing(spacing().space_s);
-                    current_row_count = 0;
-                }
-            }
-
-            if current_row_count > 0 {
-                providers_column =
-                    providers_column.push(widget::container(providers_row).center_x(Length::Fill));
-            }
-
-            main_column = main_column.push(providers_column);
-        } else {
-            let no_providers_text = widget::text(fl!("no-account-providers"))
-                .align_x(Horizontal::Center)
-                .class(cosmic::theme::Text::Default);
-
-            main_column = main_column.push(no_providers_text);
-        }
-
-        let cta_text = widget::text(fl!("add-account-body"))
-            .size(14)
-            .align_x(Horizontal::Center)
-            .class(cosmic::theme::Text::Default);
-
-        main_column = main_column.push(cta_text);
-
-        widget::container(main_column)
-            .center_x(Length::Fill)
-            .width(Length::Fill)
-    }
-
-    fn add_account_dialog(&self) -> impl Into<Element<'_, Message>> {
-        let mut main_column = widget::Column::new()
-            .spacing(spacing().space_m)
-            .padding([spacing().space_m, spacing().space_xs])
-            .align_x(Alignment::Center);
-
-        if !self.providers.is_empty() {
-            let mut providers_row = widget::Row::new().spacing(spacing().space_s);
-            let mut current_row_count = 0;
-            let max_per_row = 3;
-            let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
-
-            for provider in &self.providers {
-                let provider_button = widget::Row::new()
-                    .spacing(spacing().space_xxs)
-                    .padding(spacing().space_m)
-                    .align_y(Alignment::Center)
-                    .push(self.provider_icon(&provider.id, provider.icon_source(), 24))
-                    .push(widget::text(provider.name.clone()))
-                    .apply(widget::button::custom)
-                    .on_press(Message::StartAuth(provider.id.clone()));
-
-                providers_row = providers_row.push(provider_button);
-                current_row_count += 1;
-
-                if current_row_count >= max_per_row {
-                    providers_column = providers_column
-                        .push(widget::container(providers_row).center_x(Length::Fill));
-                    providers_row = widget::Row::new().spacing(spacing().space_s);
-                    current_row_count = 0;
-                }
-            }
-
-            if current_row_count > 0 {
-                providers_column =
-                    providers_column.push(widget::container(providers_row).center_x(Length::Fill));
-            }
-
-            main_column = main_column.push(providers_column);
-        } else {
-            let no_providers_text = widget::text("No account providers are currently available.")
-                .align_x(Horizontal::Center)
-                .class(cosmic::theme::Text::Default);
-
-            main_column = main_column.push(no_providers_text);
-        }
-
-        widget::container(main_column)
-            .center_x(Length::Fill)
-            .width(Length::Fill)
-    }
-
-    fn account_view(&self) -> impl Into<Element<'_, Message>> {
-        let Some(account) = &self.selected_account else {
-            return widget::Column::new().spacing(spacing().space_xs);
-        };
-
-        let provider_header = widget::Row::new()
-            .push(
-                self.provider_icon(
-                    &account.provider,
-                    self.providers
-                        .iter()
-                        .find(|p| p.id == account.provider)
-                        .and_then(|p| p.icon_source()),
-                    60,
-                ),
-            )
-            .push(
-                widget::Column::new()
-                    .push(widget::text::title1(account.provider.to_string()))
-                    .push(widget::text::caption_heading(account.username.to_string())),
-            )
-            .spacing(spacing().space_xs)
-            .align_y(Vertical::Center);
-
-        let account_state =
-            widget::settings::section()
-                .title(fl!("account"))
-                .add(widget::settings::flex_item(
-                    fl!("enabled"),
-                    widget::toggler(account.enabled).on_toggle(Message::EnableAccount),
-                ));
-
-        let account_details = widget::settings::section()
-            .title(fl!("details"))
-            .add(widget::settings::flex_item(
-                fl!("provider"),
-                widget::text::body(account.provider.to_string()),
-            ))
-            .add(widget::settings::flex_item(
-                fl!("display-name"),
-                widget::text::body(&account.display_name),
-            ))
-            .add(widget::settings::flex_item(
-                fl!("email"),
-                widget::text::body(account.email.clone().unwrap_or(fl!("no-email"))),
-            ))
-            .add(widget::settings::flex_item(
-                fl!("created-at"),
-                widget::text::body(
-                    account
-                        .created_at
-                        .with_timezone(&Local)
-                        .format("%B %d, %Y at %I:%M %p")
-                        .to_string(),
-                ),
-            ))
-            .add(widget::settings::flex_item(
-                fl!("last-used"),
-                widget::text::body(
-                    account
-                        .last_used
-                        .map(|last_used| {
-                            last_used
-                                .with_timezone(&Local)
-                                .format("%B %d, %Y at %I:%M %p")
-                                .to_string()
-                        })
-                        .unwrap_or(fl!("no-usage")),
-                ),
-            ));
-
-        let mut services = widget::settings::section().title(fl!("services"));
-        for (service, enabled) in &account.services {
-            services = services.add(widget::settings::item(
-                service.to_string(),
-                widget::toggler(*enabled)
-                    .on_toggle(|enabled| Message::ToggleService(service.clone(), enabled)),
-            ));
-        }
-
-        widget::Column::new()
-            .push(provider_header)
-            .push(account_state)
-            .push(account_details)
-            .push(services)
-            .spacing(spacing().space_xxs)
-    }
-
-    fn provider_icon(
-        &self,
-        provider_id: &str,
-        source: Option<IconSource>,
-        size: u16,
-    ) -> Element<'static, Message> {
-        if let Some(source) = source {
-            match source {
-                IconSource::Url(url) => {
-                    if let Some(handle) = self.icon_cache.get(&url) {
-                        return widget::image(handle.clone())
-                            .width(size)
-                            .height(size)
-                            .into();
-                    }
-                }
-                IconSource::Path(path) => {
-                    return if path.extension().and_then(|e| e.to_str()) == Some("svg") {
-                        widget::svg(widget::svg::Handle::from_path(path))
-                            .width(size)
-                            .height(size)
-                            .into()
-                    } else {
-                        widget::image(Handle::from_path(path))
-                            .width(size)
-                            .height(size)
-                            .into()
-                    };
-                }
-                IconSource::ThemeName(name) => {
-                    return widget::icon::from_name(name.as_str()).size(size).into();
-                }
-            }
-        }
-
-        match provider_id {
-            "google" => widget::image(Handle::from_bytes(
-                include_bytes!("../resources/img/google.png").to_vec(),
-            ))
-            .width(size)
-            .height(size)
-            .into(),
-            "microsoft" => widget::image(Handle::from_bytes(
-                include_bytes!("../resources/img/microsoft.png").to_vec(),
-            ))
-            .width(size)
-            .height(size)
-            .into(),
-            _ => widget::icon::from_name("network-server-symbolic")
-                .size(size)
-                .into(),
-        }
-    }
-}
-
-impl<'a> cosmic::Application for AppModel {
+impl cosmic::Application for AppModel {
     type Executor = cosmic::executor::Default;
 
     type Flags = ();
@@ -365,14 +107,16 @@ impl<'a> cosmic::Application for AppModel {
             core,
             context_page: ContextPage::default(),
             nav: nav_bar::Model::default(),
-            key_binds: HashMap::new(),
+            key_binds: key_binds(),
             toasts: widget::toaster::Toasts::new(Message::CloseToast),
             dialog_pages: VecDeque::new(),
+            about: about(),
             client: None,
             accounts: Vec::new(),
             providers: Vec::new(),
             icon_cache: HashMap::new(),
             selected_account: None,
+            pending_auth: None,
         };
 
         let tasks = vec![
@@ -408,28 +152,44 @@ impl<'a> cosmic::Application for AppModel {
         vec![menu_bar.into()]
     }
 
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+        vec![
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name("list-add-symbolic"))
+                    .on_press(Message::OpenDialog(DialogPage::AddAccount))
+                    .name(fl!("add-account")),
+                widget::text(fl!("add-account")),
+                widget::tooltip::Position::Bottom,
+            )
+            .into(),
+        ]
+    }
+
     fn nav_model(&self) -> Option<&nav_bar::Model> {
-        Some(&self.nav)
+        (!self.accounts.is_empty()).then_some(&self.nav)
     }
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
-        let dialog_page = self.dialog_pages.front()?;
-        let dialog = dialog_page.view(self);
-        Some(dialog.into())
+        self.dialog_pages.front().map(|page| page.view(self))
     }
 
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
         self.nav.activate(id);
 
         let mut tasks = vec![self.update_title()];
-        let account = self.nav.active_data::<Account>();
-        if let Some(account) = account {
-            tasks.push(self.update(Message::AccountSelected(account.clone())));
+        if let Some(account) = self.nav.active_data::<Account>().cloned() {
+            tasks.push(self.update(Message::SelectAccount(account)));
         }
         Task::batch(tasks)
     }
 
     fn on_escape(&mut self) -> cosmic::app::Task<Self::Message> {
+        // A sign-in dialog is only meaningful while we are still waiting on the
+        // browser, so dismissing it also gives up on the attempt.
+        if matches!(self.dialog_pages.front(), Some(DialogPage::SigningIn(_))) {
+            self.pending_auth = None;
+        }
+
         if self.dialog_pages.pop_front().is_some() {
             return Task::none();
         }
@@ -445,8 +205,9 @@ impl<'a> cosmic::Application for AppModel {
         }
 
         Some(match self.context_page {
-            ContextPage::About => context_drawer::context_drawer(
-                self.about(),
+            ContextPage::About => context_drawer::about(
+                &self.about,
+                |url| Message::LaunchUrl(url.to_string()),
                 Message::ToggleContextPage(ContextPage::About),
             )
             .title(fl!("about")),
@@ -454,158 +215,63 @@ impl<'a> cosmic::Application for AppModel {
     }
 
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
-        self.selected_account.as_ref().map(|account| {
+        let account = self.selected_account.as_ref()?;
+
+        Some(
             widget::Row::new()
                 .push(widget::space::horizontal())
                 .push(
-                    widget::button::standard(fl!("remove"))
-                        .class(cosmic::style::Button::Destructive)
-                        .on_press(Message::DeleteAccount(account.id)),
+                    widget::button::standard(fl!("remove-account"))
+                        .leading_icon(widget::icon::from_name("user-trash-symbolic"))
+                        .on_press(Message::OpenDialog(DialogPage::RemoveAccount(
+                            account.id,
+                            self.account_label(account),
+                        ))),
                 )
-                .spacing(spacing().space_xxs)
+                .align_y(cosmic::iced::Alignment::Center)
                 .apply(widget::container)
                 .class(cosmic::style::Container::Card)
-                .padding(spacing().space_xxs)
-                .into()
-        })
+                .padding(spacing().space_xs)
+                .into(),
+        )
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let content = if self.selected_account.is_some() {
-            self.account_view().into()
-        } else {
-            self.welcome_view().into()
+        let content = match self.selected_account.as_ref() {
+            Some(account) => self.account_view(account),
+            None if self.accounts.is_empty() => self.welcome_view(),
+            None => self.no_selection_view(),
         };
 
-        let toaster =
-            widget::Row::new().push(widget::toaster(&self.toasts, widget::space::horizontal()));
-
-        widget::Column::new()
-            .push(widget::scrollable(content))
-            .push(toaster)
-            .padding(spacing().space_xxs)
-            .height(Length::Fill)
-            .into()
+        widget::toaster(&self.toasts, content)
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        if self.client.is_none() {
-            return Subscription::none();
+        let mut subscriptions = vec![event::listen_with(|event, status, _| match event {
+            Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. })
+                if status == event::Status::Ignored =>
+            {
+                Some(Message::Key(modifiers, key))
+            }
+            _ => None,
+        })];
+
+        if self.client.is_some() {
+            subscriptions.extend(DAEMON_SIGNALS.map(|signal| {
+                Subscription::run_with(signal, |signal: &&'static str| {
+                    let signal = *signal;
+                    stream::channel(4, move |output| watch_daemon_signal(signal, output))
+                })
+            }));
         }
 
-        Subscription::batch(vec![
-            Subscription::run_with("subscription-channel", |_: &&str| {
-                stream::channel(
-                    4,
-                    |mut channel: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
-                        _ = channel.send(Message::SubscriptionChannel).await;
-                        futures_util::future::pending().await
-                    },
-                )
-            }),
-            Subscription::run_with("account_added", |_: &&str| {
-                stream::channel(
-                    1,
-                    |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
-                        let Ok(client) = AccountsClient::new().await else {
-                            return;
-                        };
-                        if let Ok(mut account_added_stream) = client.receive_account_added().await {
-                            while let Some(account_added) = account_added_stream.next().await {
-                                let args = account_added.args().expect("Error parsing arguments");
-                                if let Err(err) = output
-                                    .send(Message::AddAccount(
-                                        Uuid::parse_str(args.account_id())
-                                            .expect("Expected account id to be UUID"),
-                                    ))
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        "failed to send message from subscription: {}",
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    },
-                )
-            }),
-            Subscription::run_with("account_changed", |_: &&str| {
-                stream::channel(
-                    1,
-                    |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
-                        let Ok(client) = AccountsClient::new().await else {
-                            return;
-                        };
-                        if let Ok(mut account_changed_stream) =
-                            client.receive_account_changed().await
-                        {
-                            while let Some(_) = account_changed_stream.next().await {
-                                if let Err(err) = output.send(Message::LoadAccounts).await {
-                                    tracing::warn!(
-                                        "failed to send message from subscription: {}",
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    },
-                )
-            }),
-            Subscription::run_with("account_removed", |_: &&str| {
-                stream::channel(
-                    1,
-                    |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
-                        let Ok(client) = AccountsClient::new().await else {
-                            return;
-                        };
-                        if let Ok(mut account_removed_stream) =
-                            client.receive_account_removed().await
-                        {
-                            while let Some(_) = account_removed_stream.next().await {
-                                if let Err(err) = output.send(Message::LoadAccounts).await {
-                                    tracing::warn!(
-                                        "failed to send message from subscription: {}",
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    },
-                )
-            }),
-            Subscription::run_with("account_exists", |_: &&str| {
-                stream::channel(
-                    1,
-                    |mut output: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
-                        let Ok(client) = AccountsClient::new().await else {
-                            return;
-                        };
-                        if let Ok(mut account_exists_stream) = client.receive_account_exists().await
-                        {
-                            while let Some(_) = account_exists_stream.next().await {
-                                if let Err(err) = output.send(Message::AccountExists).await {
-                                    tracing::warn!(
-                                        "failed to send message from subscription: {}",
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    },
-                )
-            }),
-        ])
+        Subscription::batch(subscriptions)
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         let mut tasks = vec![];
 
         match message {
-            Message::OpenRepositoryUrl => {
-                _ = open::that_detached(REPOSITORY);
-            }
-            Message::SubscriptionChannel => {}
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     self.core.window.show_context = !self.core.window.show_context;
@@ -614,19 +280,18 @@ impl<'a> cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
-            Message::ToggleDialog(page) => self.dialog_pages.push_back(page),
-            Message::UpdateDialog(page) => {
-                self.dialog_pages[0] = page.clone();
+            Message::OpenDialog(page) => {
+                self.dialog_pages.clear();
+                self.dialog_pages.push_back(page);
             }
             Message::CloseDialog => {
                 self.dialog_pages.pop_front();
             }
-            Message::LaunchUrl(url) => match open::that_detached(&url) {
-                Ok(()) => {}
-                Err(err) => {
-                    eprintln!("failed to open {url:?}: {err}");
+            Message::LaunchUrl(url) => {
+                if let Err(err) = open::that_detached(&url) {
+                    tracing::error!("Failed to open {url:?}: {err}");
                 }
-            },
+            }
             Message::ShowToast(message) => {
                 tasks.push(
                     self.toasts
@@ -635,184 +300,92 @@ impl<'a> cosmic::Application for AppModel {
                 );
             }
             Message::CloseToast(id) => self.toasts.remove(id),
-            Message::LoadAccounts => {
-                let client = self.client.clone();
-                if let Some(client) = client {
-                    tasks.push(Task::perform(
-                        async move { client.list_accounts().await },
-                        |accounts| match accounts {
-                            Ok(accounts) => cosmic::Action::App(Message::SetAccounts(accounts)),
-                            Err(err) => {
-                                tracing::error!("{err}");
-                                cosmic::Action::None
-                            }
-                        },
-                    ));
+            Message::Key(modifiers, key) => {
+                let action = self.key_binds.iter().find_map(|(key_bind, action)| {
+                    key_bind.matches(modifiers, &key, None).then_some(*action)
+                });
+                if let Some(action) = action {
+                    return self.update(action.message());
                 }
             }
-            Message::EnableAccount(enable) => {
-                if let (Some(mut client), Some(account)) =
-                    (self.client.clone(), self.selected_account.clone())
-                {
-                    tasks.push(Task::perform(
-                        async move {
-                            client.set_account_enabled(&account.id, enable).await?;
-                            Ok(())
-                        },
-                        |result: Result<(), zbus::fdo::Error>| match result {
-                            Ok(_) => cosmic::action::app(Message::LoadAccounts),
-                            Err(err) => {
-                                tracing::error!("Failed to toggle account: {}", err);
-                                cosmic::action::none()
-                            }
-                        },
-                    ));
-                }
-            }
-            Message::ToggleService(service, enabled) => {
-                if let (Some(mut client), Some(account)) =
-                    (self.client.clone(), self.selected_account.clone())
-                {
-                    tasks.push(Task::perform(
-                        async move {
-                            client
-                                .set_service_enabled(&account.id, &service, enabled)
-                                .await?;
-                            Ok(())
-                        },
-                        |result: Result<(), zbus::fdo::Error>| match result {
-                            Ok(_) => cosmic::action::app(Message::LoadAccounts),
-                            Err(err) => {
-                                tracing::error!("Failed to set service: {}", err);
-                                cosmic::action::none()
-                            }
-                        },
-                    ));
-                }
-            }
-            Message::AddAccount(id) => {
-                let client = self.client.clone();
-                if let Some(client) = client {
-                    tasks.push(Task::perform(
-                        async move { client.get_account(&id.to_string()).await },
-                        |account| match account {
-                            Ok(account) => cosmic::action::app(Message::AccountSelected(account)),
-                            Err(err) => {
-                                tracing::error!("{err}");
-                                cosmic::action::none()
-                            }
-                        },
-                    ));
-                }
-                tasks.push(self.update(Message::CloseDialog));
-                tasks.push(self.update(Message::LoadAccounts));
-            }
-            Message::DeleteAccount(account_id) => {
-                tracing::info!("Removing account: {}", account_id);
-                if let Some(mut client) = self.client.clone() {
-                    tasks.push(Task::perform(
-                        async move {
-                            client.remove_account(&account_id).await?;
-                            client.account_removed(&account_id).await?;
-                            Ok(account_id)
-                        },
-                        |result: Result<Uuid, zbus::fdo::Error>| match result {
-                            Ok(account_id) => {
-                                cosmic::action::app(Message::RemoveAccount(account_id.clone()))
-                            }
-                            Err(err) => {
-                                tracing::error!("Failed to remove account: {}", err);
-                                cosmic::action::none()
-                            }
-                        },
-                    ));
-                }
-            }
-            Message::RemoveAccount(account_id) => {
-                self.accounts.retain(|account| account.id != account_id);
-                self.selected_account = None;
-            }
-            Message::AccountExists => {
-                tasks.push(self.update(Message::ShowToast(fl!("account-exists"))));
-            }
-            Message::AccountSelected(account) => self.selected_account = Some(account),
-            Message::SetAccounts(accounts) => {
-                self.core.nav_bar_set_toggled(!accounts.is_empty());
-                self.accounts.clear();
-                self.nav.clear();
 
-                self.accounts = accounts;
-                if let Some(selected) = self.selected_account.clone()
-                    && let Some(account) = self.accounts.iter().find(|a| a.id == selected.id)
-                {
-                    self.selected_account = Some(account.clone());
-                    for account in &self.accounts {
-                        let account = account.clone();
-
-                        if account.id == selected.id {
-                            self.nav
-                                .insert()
-                                .activate()
-                                .text(account.username.clone())
-                                .data(account);
-                        } else {
-                            self.nav
-                                .insert()
-                                .text(account.username.clone())
-                                .data(account);
-                        }
-                    }
-                } else {
-                    for account in &self.accounts {
-                        let account = account.clone();
-
-                        self.nav
-                            .insert()
-                            .text(account.username.clone())
-                            .data(account);
-                    }
-                }
-            }
             Message::CreateClient => {
                 tasks.push(Task::perform(
                     async {
-                        match AccountsClient::new().await {
-                            Ok(client) => Some(client),
-                            Err(err) => {
-                                tracing::error!("{err}");
-                                None
-                            }
-                        }
+                        AccountsClient::new()
+                            .await
+                            .inspect_err(|err| tracing::error!("Failed to reach the daemon: {err}"))
+                            .ok()
                     },
-                    |client| cosmic::Action::App(Message::SetClient(client)),
+                    |client| cosmic::action::app(Message::SetClient(client)),
                 ));
             }
             Message::SetClient(client) => {
                 self.client = client;
-                tasks.push(cosmic::task::message(Message::LoadAccounts));
 
                 if let Some(client) = self.client.clone() {
+                    tasks.push(cosmic::task::message(Message::LoadAccounts));
                     tasks.push(Task::perform(
                         async move {
                             client.list_providers().await.unwrap_or_else(|err| {
-                                tracing::error!("Failed to list providers: {}", err);
+                                tracing::error!("Failed to list providers: {err}");
                                 Vec::new()
                             })
                         },
-                        |providers| cosmic::Action::App(Message::SetProviders(providers)),
+                        |providers| cosmic::action::app(Message::SetProviders(providers)),
                     ));
                 }
             }
-            Message::SetProviders(providers) => {
+            Message::LoadAccounts => {
+                if let Some(client) = self.client.clone() {
+                    tasks.push(Task::perform(
+                        async move { client.list_accounts().await },
+                        |accounts| match accounts {
+                            Ok(accounts) => cosmic::action::app(Message::SetAccounts(accounts)),
+                            Err(err) => {
+                                tracing::error!("Failed to list accounts: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::SetAccounts(accounts) => {
+                let was_empty = self.accounts.is_empty();
+                let selected_id = self.selected_account.as_ref().map(|account| account.id);
+
+                self.accounts = accounts;
+
+                // Keep pointing at the same account so a background refresh does not
+                // move the user, and fall back to the first one so a populated app
+                // never opens on the "no accounts yet" screen.
+                self.selected_account = selected_id
+                    .and_then(|id| self.accounts.iter().find(|account| account.id == id))
+                    .or_else(|| self.accounts.first())
+                    .cloned();
+
+                self.rebuild_nav();
+
+                // Open the sidebar the moment there is something to put in it, but
+                // otherwise leave whatever the user chose alone.
+                if was_empty && !self.accounts.is_empty() {
+                    self.core.nav_bar_set_toggled(true);
+                }
+
+                tasks.push(self.update_title());
+            }
+            Message::SetProviders(mut providers) => {
+                providers.sort_by(|a, b| a.name.cmp(&b.name));
+
                 for provider in &providers {
-                    let Some(icon) = &provider.icon else {
-                        continue;
-                    };
-                    if !(icon.starts_with("http://") || icon.starts_with("https://"))
-                        || self.icon_cache.contains_key(icon)
-                    {
+                    let Some(icon) = &provider.icon else { continue };
+                    if !icon.starts_with("http://") && !icon.starts_with("https://") {
                         continue;
                     }
+                    if self.icon_cache.contains_key(icon) {
+                        continue;
+                    }
+
                     let url = icon.clone();
                     tasks.push(Task::perform(
                         async move {
@@ -821,86 +394,222 @@ impl<'a> cosmic::Application for AppModel {
                         },
                         |result| match result {
                             Some((url, bytes)) => {
-                                cosmic::Action::App(Message::ProviderIconLoaded(url, Some(bytes)))
+                                cosmic::action::app(Message::ProviderIconLoaded(url, bytes))
                             }
                             None => cosmic::action::none(),
                         },
                     ));
                 }
+
                 self.providers = providers;
+                self.rebuild_nav();
             }
             Message::ProviderIconLoaded(url, bytes) => {
-                if let Some(bytes) = bytes {
-                    self.icon_cache.insert(url, Handle::from_bytes(bytes));
+                self.icon_cache
+                    .insert(url, widget::icon::from_raster_bytes(bytes));
+                self.rebuild_nav();
+            }
+            Message::SelectAccount(account) => self.selected_account = Some(account),
+            Message::SetAccountEnabled(enabled) => {
+                if let (Some(mut client), Some(account)) =
+                    (self.client.clone(), self.selected_account.clone())
+                {
+                    tasks.push(Task::perform(
+                        async move { client.set_account_enabled(&account.id, enabled).await },
+                        |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(()) => cosmic::action::app(Message::LoadAccounts),
+                            Err(err) => {
+                                tracing::error!("Failed to toggle account: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
                 }
             }
+            Message::SetServiceEnabled(service, enabled) => {
+                if let (Some(mut client), Some(account)) =
+                    (self.client.clone(), self.selected_account.clone())
+                {
+                    tasks.push(Task::perform(
+                        async move {
+                            client
+                                .set_service_enabled(&account.id, &service, enabled)
+                                .await
+                        },
+                        |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(()) => cosmic::action::app(Message::LoadAccounts),
+                            Err(err) => {
+                                tracing::error!("Failed to set service: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::RemoveAccount(account_id) => {
+                self.dialog_pages.pop_front();
+
+                let label = self
+                    .accounts
+                    .iter()
+                    .find(|account| account.id == account_id)
+                    .map(|account| self.account_label(account))
+                    .unwrap_or_default();
+
+                if let Some(mut client) = self.client.clone() {
+                    tasks.push(Task::perform(
+                        async move {
+                            client.remove_account(&account_id).await?;
+                            client.account_removed(&account_id).await?;
+                            Ok(())
+                        },
+                        move |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(()) => cosmic::action::app(Message::AccountRemoved(
+                                account_id,
+                                label.clone(),
+                            )),
+                            Err(err) => {
+                                tracing::error!("Failed to remove account: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::AccountRemoved(account_id, label) => {
+                self.accounts.retain(|account| account.id != account_id);
+                if self.selected_account.as_ref().is_some_and(|a| a.id == account_id) {
+                    self.selected_account = None;
+                }
+                tasks.push(self.update(Message::ShowToast(fl!(
+                    "account-removed",
+                    account = label.as_str()
+                ))));
+                tasks.push(self.update(Message::LoadAccounts));
+            }
+
             Message::StartAuth(provider) => {
-                tracing::info!(
-                    "Starting authentication for provider: {}",
-                    provider.to_string()
-                );
+                tracing::info!("Starting authentication for provider: {provider}");
 
                 let Some(mut client) = self.client.clone() else {
-                    tracing::error!("No client available");
-                    return Task::none();
+                    return self.update(Message::AuthFailed(fl!("service-unavailable")));
                 };
 
+                self.pending_auth = Some(PendingAuth::default());
+                tasks.push(self.update(Message::OpenDialog(DialogPage::SigningIn(provider.clone()))));
                 tasks.push(Task::perform(
-                    async move {
-                        let url = client.start_authentication(&provider).await?;
-                        open::that_detached(url)
-                            .map_err(|e| zbus::Error::Failure(e.to_string()))?;
-                        Ok(())
-                    },
-                    |result: Result<(), zbus::Error>| match result {
-                        Ok(_) => cosmic::action::none(),
+                    async move { client.start_authentication(&provider).await },
+                    |result| match result {
+                        Ok(url) => cosmic::action::app(Message::AuthUrlReady(url)),
                         Err(err) => {
-                            tracing::error!("Failed to start authentication: {}", err);
-                            cosmic::action::none()
+                            tracing::error!("Failed to start authentication: {err}");
+                            cosmic::action::app(Message::AuthFailed(err.to_string()))
                         }
                     },
                 ));
             }
+            Message::AuthUrlReady(url) => {
+                let Some(pending) = self.pending_auth.as_mut() else {
+                    // The user gave up while the daemon was preparing the URL.
+                    return Task::none();
+                };
+                pending.url = Some(url.clone());
+                tasks.push(self.update(Message::LaunchUrl(url)));
+            }
+            Message::OpenAuthUrl => {
+                if let Some(url) = self
+                    .pending_auth
+                    .as_ref()
+                    .and_then(|pending| pending.url.clone())
+                {
+                    tasks.push(self.update(Message::LaunchUrl(url)));
+                }
+            }
+            Message::CancelAuth => {
+                self.pending_auth = None;
+                tasks.push(self.update(Message::CloseDialog));
+            }
+            Message::AuthFailed(error) => {
+                self.pending_auth = None;
+                tasks.push(self.update(Message::CloseDialog));
+                tasks.push(self.update(Message::ShowToast(fl!(
+                    "auth-failed",
+                    error = error.as_str()
+                ))));
+            }
+            Message::AccountExists => {
+                self.pending_auth = None;
+                tasks.push(self.update(Message::CloseDialog));
+                tasks.push(self.update(Message::ShowToast(fl!("account-exists"))));
+            }
+            Message::AccountAdded(id) => {
+                self.pending_auth = None;
+                tasks.push(self.update(Message::CloseDialog));
+
+                if let Some(client) = self.client.clone() {
+                    tasks.push(Task::perform(
+                        async move { client.get_account(&id.to_string()).await },
+                        |account| match account {
+                            Ok(account) => cosmic::action::app(Message::AccountReady(account)),
+                            Err(err) => {
+                                tracing::error!("Failed to load the new account: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+                tasks.push(self.update(Message::LoadAccounts));
+            }
+            Message::AccountReady(account) => {
+                let label = self.account_label(&account);
+                tasks.push(self.update(Message::SelectAccount(account)));
+                tasks.push(self.update(Message::ShowToast(fl!(
+                    "account-added",
+                    account = label.as_str()
+                ))));
+            }
         }
+
         Task::batch(tasks)
     }
 }
 
 impl AppModel {
-    pub fn about(&self) -> Element<'_, Message> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-
-        let icon = widget::svg(widget::svg::Handle::from_memory(APP_ICON));
-
-        let title = widget::text::title3(fl!("app-title"));
-
-        let hash = env!("VERGEN_GIT_SHA");
-        let short_hash: String = hash.chars().take(7).collect();
-        let date = env!("VERGEN_GIT_COMMIT_DATE");
-
-        let link = widget::button::link(REPOSITORY)
-            .on_press(Message::OpenRepositoryUrl)
-            .padding(0);
-
-        widget::Column::new()
-            .push(icon)
-            .push(title)
-            .push(link)
-            .push(
-                widget::button::link(fl!(
-                    "git-description",
-                    hash = short_hash.as_str(),
-                    date = date
-                ))
-                .on_press(Message::LaunchUrl(format!("{REPOSITORY}/commits/{hash}")))
-                .padding(0),
-            )
-            .align_x(Alignment::Center)
-            .spacing(space_xxs)
-            .into()
+    /// The name to show for an account wherever a single line has to identify it.
+    fn account_label(&self, account: &Account) -> String {
+        if account.username.is_empty() {
+            account.display_name.clone()
+        } else {
+            account.username.clone()
+        }
     }
 
-    pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
+    fn rebuild_nav(&mut self) {
+        let selected_id = self.selected_account.as_ref().map(|account| account.id);
+        let entries = self
+            .accounts
+            .iter()
+            .map(|account| {
+                (
+                    self.account_label(account),
+                    self.provider_icon_handle(&account.provider),
+                    account.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        self.nav.clear();
+        for (label, icon, account) in entries {
+            let is_selected = selected_id == Some(account.id);
+            let mut entry = self.nav.insert();
+            if is_selected {
+                entry = entry.activate();
+            }
+            entry.icon(icon.icon()).text(label).data(account);
+        }
+    }
+
+    fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
         let mut window_title = fl!("app-title");
 
         if let Some(page) = self.nav.text(self.nav.active()) {
@@ -908,12 +617,126 @@ impl AppModel {
             window_title.push_str(page);
         }
 
-        if let Some(id) = self.core.main_window_id() {
-            self.set_window_title(window_title, id)
-        } else {
-            Task::none()
+        match self.core.main_window_id() {
+            Some(id) => self.set_window_title(window_title, id),
+            None => Task::none(),
         }
     }
+}
+
+const ACCOUNT_ADDED: &str = "account_added";
+const ACCOUNT_CHANGED: &str = "account_changed";
+const ACCOUNT_REMOVED: &str = "account_removed";
+const ACCOUNT_EXISTS: &str = "account_exists";
+const AUTHENTICATION_FAILED: &str = "authentication_failed";
+
+const DAEMON_SIGNALS: [&str; 5] = [
+    ACCOUNT_ADDED,
+    ACCOUNT_CHANGED,
+    ACCOUNT_REMOVED,
+    ACCOUNT_EXISTS,
+    AUTHENTICATION_FAILED,
+];
+
+/// Bridges one of the daemon's D-Bus signals into the application's message stream.
+async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
+    let Ok(client) = AccountsClient::new().await else {
+        tracing::error!("Failed to connect to the daemon to watch for {signal}");
+        return;
+    };
+
+    match signal {
+        ACCOUNT_ADDED => match client.receive_account_added().await {
+            Ok(stream) => {
+                forward(stream, output, |signal| {
+                    let args = signal.args().ok()?;
+                    Uuid::parse_str(args.account_id())
+                        .ok()
+                        .map(Message::AccountAdded)
+                })
+                .await;
+            }
+            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
+        },
+        ACCOUNT_CHANGED => match client.receive_account_changed().await {
+            Ok(stream) => forward(stream, output, |_| Some(Message::LoadAccounts)).await,
+            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
+        },
+        ACCOUNT_REMOVED => match client.receive_account_removed().await {
+            Ok(stream) => forward(stream, output, |_| Some(Message::LoadAccounts)).await,
+            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
+        },
+        ACCOUNT_EXISTS => match client.receive_account_exists().await {
+            Ok(stream) => forward(stream, output, |_| Some(Message::AccountExists)).await,
+            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
+        },
+        AUTHENTICATION_FAILED => match client.receive_authentication_failed().await {
+            Ok(stream) => {
+                forward(stream, output, |signal| {
+                    let args = signal.args().ok()?;
+                    Some(Message::AuthFailed(args.reason().to_string()))
+                })
+                .await;
+            }
+            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
+        },
+        unknown => tracing::error!("Unknown daemon signal: {unknown}"),
+    }
+}
+
+async fn forward<S, T>(
+    mut signals: S,
+    mut output: Sender<Message>,
+    into_message: impl Fn(T) -> Option<Message>,
+) where
+    S: Stream<Item = T> + Unpin,
+{
+    while let Some(signal) = signals.next().await {
+        let Some(message) = into_message(signal) else {
+            continue;
+        };
+        if let Err(err) = output.send(message).await {
+            tracing::warn!("Failed to forward a daemon signal: {err}");
+            return;
+        }
+    }
+}
+
+fn key_binds() -> HashMap<menu::KeyBind, MenuAction> {
+    use menu::key_bind::Modifier;
+
+    HashMap::from([(
+        menu::KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("n".into()),
+        },
+        MenuAction::AddAccount,
+    )])
+}
+
+fn about() -> widget::about::About {
+    widget::about::About::default()
+        .name(fl!("app-title"))
+        .icon(widget::icon::from_svg_bytes(APP_ICON))
+        .version(env!("CARGO_PKG_VERSION"))
+        .author("Eduardo Flores")
+        .comments(fl!("manage-online"))
+        .license("GPL-3.0-only")
+        .links([
+            (fl!("repository"), REPOSITORY.to_string()),
+            (
+                fl!("git-description", hash = short_hash(), date = commit_date()),
+                format!("{REPOSITORY}/commits/{}", env!("VERGEN_GIT_SHA")),
+            ),
+        ])
+}
+
+fn short_hash() -> String {
+    env!("VERGEN_GIT_SHA").chars().take(7).collect()
+}
+
+fn commit_date() -> &'static str {
+    env!("VERGEN_GIT_COMMIT_DATE")
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -934,24 +757,7 @@ impl menu::action::MenuAction for MenuAction {
     fn message(&self) -> Self::Message {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
-            MenuAction::AddAccount => Message::ToggleDialog(DialogPage::AddAccount),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DialogPage {
-    AddAccount,
-}
-
-impl DialogPage {
-    fn view<'a>(&self, app: &'a AppModel) -> impl Into<Element<'a, Message>> {
-        match self {
-            DialogPage::AddAccount => widget::dialog()
-                .title(fl!("add-account-title"))
-                .body(fl!("add-account-body"))
-                .primary_action(widget::button::text(fl!("close")).on_press(Message::CloseDialog))
-                .control(app.add_account_dialog()),
+            MenuAction::AddAccount => Message::OpenDialog(DialogPage::AddAccount),
         }
     }
 }
