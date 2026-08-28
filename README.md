@@ -1,5 +1,6 @@
 <div align="center">
   <br>
+  <img src="crates/ui/resources/icons/hicolor/scalable/apps/icon.svg" width="128" alt="Accounts for COSMIC icon">
   <h1>Accounts for COSMIC™</h1>
 
   <p>Sign in once, use everywhere</p>

@@ -49,6 +49,9 @@ clean:
 install-gui: build-gui
     sudo cp target/release/accounts_ui /usr/bin/
     sudo cp crates/ui/data/cosmic-accounts.service /usr/share/dbus-1/services/
+    sudo install -Dm0644 crates/ui/resources/app.desktop /usr/share/applications/dev.edfloreshz.Accounts.desktop
+    sudo install -Dm0644 crates/ui/resources/app.metainfo.xml /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
+    sudo install -Dm0644 crates/ui/resources/icons/hicolor/scalable/apps/icon.svg /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
 
 # Install provider configurations (requires sudo)
 install-configs:
@@ -63,6 +66,9 @@ install: build install-gui install-configs
 uninstall:
     sudo rm -f /usr/bin/accounts_ui
     sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
+    sudo rm -f /usr/share/applications/dev.edfloreshz.Accounts.desktop
+    sudo rm -f /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
+    sudo rm -f /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
     sudo rm -rf /etc/accounts
 
 # Start the background service (user session)
