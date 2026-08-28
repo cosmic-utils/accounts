@@ -15,25 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This container is a minimal freedesktop-sdk image (no apt/dnf, no
+      # bash) that already bundles Python with aiohttp/tomlkit preinstalled,
+      # so no dependency install is needed here.
       - name: Ensure cargo-sources.json is up to date
         run: |
-          apt-get update && apt-get install -y python3-pip
-          pip install --break-system-packages aiohttp tomlkit
           curl -sL -o /tmp/flatpak-cargo-generator.py \
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json
 
-      - name: Install gettext (for envsubst)
-        run: apt-get update && apt-get install -y gettext
-
       # Real OAuth client credentials never touch the repo. This patches the
       # placeholders in the checked-out working copy only — nothing here is
       # committed back — before flatpak-builder bundles the files into /app.
-      #
-      # Secrets are exported via $GITHUB_ENV rather than a step-level `env:`
-      # block: in container jobs, a step's own `env:` clobbers PATH (a known
-      # GitHub Actions runner issue), which broke apt-get in the step above
-      # when it was combined into one step with `env:` set.
       - name: Export credentials
         run: |
           echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> "$GITHUB_ENV"

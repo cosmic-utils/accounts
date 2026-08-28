@@ -16,6 +16,8 @@
     "--own-name=dev.edfloreshz.Accounts",
     "--talk-name=dev.edfloreshz.Accounts.Provider.Google",
     "--talk-name=dev.edfloreshz.Accounts.Provider.Microsoft",
+    "--talk-name=com.system76.CosmicSettingsDaemon.*",
+    "--talk-name=com.system76.CosmicSettingsDaemon",
     "--talk-name=org.freedesktop.secrets",
     "--filesystem=xdg-data/accounts:ro"
   ],
