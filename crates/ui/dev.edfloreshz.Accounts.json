@@ -9,6 +9,7 @@
   "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
   "command": "accounts_ui",
   "finish-args": [
+    "--share=network",
     "--share=ipc",
     "--socket=wayland",
     "--socket=fallback-x11",
