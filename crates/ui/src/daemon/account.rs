@@ -1,253 +1,262 @@
 use crate::daemon::{Error, auth::AuthManager, services::ServiceFactory};
-use accounts_core::{
-    config::AccountsConfig,
-    models::{DbusAccount, DbusProviderInfo, Service},
-};
+use accounts_core::{config::AccountsConfig, models::Service};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, object_server::SignalEmitter};
 
-pub struct AccountsInterface {
-    auth_manager: AuthManager,
-    config: AccountsConfig,
+/// Per-account D-Bus object served at `/dev/edfloreshz/Accounts/Accounts/<dbus_id>`.
+///
+/// State is shared with the rest of the daemon through the same `Arc<Mutex<..>>` handles
+/// used by the `Manager` object, so every instance stays in sync with the on-disk config.
+pub struct AccountInterface {
+    pub(crate) id: Uuid,
+    pub(crate) config: Arc<Mutex<AccountsConfig>>,
+    pub(crate) auth_manager: Arc<Mutex<AuthManager>>,
+}
+
+impl AccountInterface {
+    pub fn new(
+        id: Uuid,
+        config: Arc<Mutex<AccountsConfig>>,
+        auth_manager: Arc<Mutex<AuthManager>>,
+    ) -> Self {
+        Self {
+            id,
+            config,
+            auth_manager,
+        }
+    }
+
+    async fn current(&self) -> Result<accounts_core::models::Account> {
+        let config = self.config.lock().await;
+        config
+            .get_account(&self.id)
+            .ok_or_else(|| Error::AccountNotFound(self.id.to_string()).into())
+    }
 }
 
 #[interface(name = "dev.edfloreshz.Accounts.Account")]
-impl AccountsInterface {
-    pub(crate) async fn list_accounts(&self) -> Vec<DbusAccount> {
-        self.config.accounts.iter().map(Into::into).collect()
+impl AccountInterface {
+    #[zbus(property)]
+    async fn id(&self) -> Result<String> {
+        Ok(self.id.to_string())
     }
 
-    async fn get_account(&self, id: &str) -> Result<DbusAccount> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+    #[zbus(property)]
+    async fn provider_id(&self) -> Result<String> {
+        Ok(self.current().await?.provider)
+    }
 
-        match self
-            .config
-            .accounts
+    #[zbus(property)]
+    async fn display_name(&self) -> Result<String> {
+        Ok(self.current().await?.display_name)
+    }
+
+    #[zbus(property)]
+    async fn set_display_name(&self, value: String) -> Result<()> {
+        let mut account = self.current().await?;
+        account.display_name = value;
+        let mut config = self.config.lock().await;
+        config
+            .save_account(&account)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))
+    }
+
+    #[zbus(property)]
+    async fn identity(&self) -> Result<String> {
+        let account = self.current().await?;
+        Ok(account.email.unwrap_or(account.username))
+    }
+
+    #[zbus(property)]
+    async fn enabled(&self) -> Result<bool> {
+        Ok(self.current().await?.enabled)
+    }
+
+    #[zbus(property)]
+    async fn set_enabled(&self, value: bool) -> Result<()> {
+        let mut account = self.current().await?;
+        account.enabled = value;
+        let mut config = self.config.lock().await;
+        config
+            .save_account(&account)
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))
+    }
+
+    #[zbus(property)]
+    async fn available_services(&self) -> Result<Vec<String>> {
+        Ok(self
+            .current()
+            .await?
+            .services
+            .keys()
+            .map(ToString::to_string)
+            .collect())
+    }
+
+    #[zbus(property)]
+    async fn enabled_services(&self) -> Result<Vec<String>> {
+        Ok(self
+            .current()
+            .await?
+            .services
             .iter()
-            .find(|account| account.id == uuid)
-        {
-            Some(account) => Ok(account.into()),
-            None => Err(Error::AccountNotFound(id.to_string()).into()),
-        }
+            .filter(|(_, enabled)| **enabled)
+            .map(|(service, _)| service.to_string())
+            .collect())
     }
 
-    async fn list_providers(&self) -> Vec<DbusProviderInfo> {
-        crate::daemon::REGISTRY
-            .get()
-            .map(|registry| registry.list_infos())
-            .unwrap_or_default()
+    #[zbus(property)]
+    async fn created_at(&self) -> Result<String> {
+        Ok(self.current().await?.created_at.to_string())
     }
 
-    async fn start_authentication(&mut self, provider_name: &str) -> Result<String> {
-        let Some(registry) = crate::daemon::REGISTRY.get() else {
-            return Err(Error::InvalidProviderConfig.into());
-        };
-        if registry.get(provider_name).is_none() {
-            return Err(Error::InvalidProvider(provider_name.to_string()).into());
+    #[zbus(property)]
+    async fn last_used(&self) -> Result<String> {
+        Ok(self
+            .current()
+            .await?
+            .last_used
+            .map(|last_used| last_used.to_string())
+            .unwrap_or_default())
+    }
+
+    #[zbus(property)]
+    async fn email(&self) -> Result<String> {
+        Ok(self.current().await?.email.unwrap_or_default())
+    }
+
+    async fn enable_service(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        service: &str,
+    ) -> Result<()> {
+        self.set_service_enabled(&emitter, service, true).await
+    }
+
+    async fn disable_service(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        service: &str,
+    ) -> Result<()> {
+        self.set_service_enabled(&emitter, service, false).await
+    }
+
+    async fn remove(&self) -> Result<()> {
+        let id = self.id;
+
+        {
+            let mut config = self.config.lock().await;
+            config
+                .remove_account(&id)
+                .map_err(|e| zbus::fdo::Error::Failed(format!("Account {id} not removed: {e}")))?;
         }
 
-        match self
-            .auth_manager
-            .start_auth_flow(provider_name.to_string())
-            .await
         {
-            Ok(url) => Ok(url),
-            Err(err) => {
-                tracing::error!("Failed to start authentication flow: {}", err);
-                Err(Error::AuthenticationFailed {
-                    reason: err.to_string(),
-                }
-                .into())
+            let auth_manager = self.auth_manager.lock().await;
+            auth_manager
+                .delete_credentials(&id)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        }
+
+        if let Some(connection) = crate::daemon::CONNECTION.get() {
+            let path = format!(
+                "/dev/edfloreshz/Accounts/Accounts/{}",
+                id.to_string().replace('-', "_")
+            );
+            connection
+                .object_server()
+                .remove::<AccountInterface, _>(path)
+                .await?;
+
+            if let Ok(iface_ref) = connection
+                .object_server()
+                .interface::<_, crate::daemon::manager::ManagerInterface>(
+                    "/dev/edfloreshz/Accounts/Manager",
+                )
+                .await
+            {
+                let account_path = zbus::zvariant::OwnedObjectPath::try_from(format!(
+                    "/dev/edfloreshz/Accounts/Accounts/{}",
+                    id.to_string().replace('-', "_")
+                ))
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+                crate::daemon::manager::ManagerInterface::account_removed(
+                    iface_ref.signal_emitter(),
+                    account_path,
+                )
+                .await?;
             }
         }
-    }
 
-    async fn complete_authentication(
-        &mut self,
-        csrf_token: &str,
-        authorization_code: &str,
-    ) -> Result<String> {
-        match self
-            .auth_manager
-            .complete_auth_flow(csrf_token.to_string(), authorization_code.to_string())
-            .await
-        {
-            Ok(account) => {
-                let account_id = account.id.to_string();
-                match self.config.save_account(&account) {
-                    Ok(_) => Ok(account_id),
-                    Err(err) => Err(Error::AccountNotSaved(err.to_string()).into()),
-                }
-            }
-            Err(err) => Err(Error::AuthenticationFailed {
-                reason: err.to_string(),
-            }
-            .into()),
-        }
-    }
-
-    async fn remove_account(&mut self, id: &str) -> Result<()> {
-        let id = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-
-        self.config
-            .remove_account(&id)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Account {id} not removed: {}", e)))?;
-        self.auth_manager
-            .delete_credentials(&id)
-            .await
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         Ok(())
     }
 
-    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-
-        match self.config.get_account(&uuid) {
-            Some(mut account) => {
-                account.enabled = enabled;
-                match self.config.save_account(&account) {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(Error::AccountNotUpdated(format!(
-                        "Account {id} not updated: {}",
-                        err
-                    ))
-                    .into()),
-                }
-            }
-            None => Err(Error::AccountNotFound(id.to_string()).into()),
-        }
+    async fn get_access_token(&self) -> Result<String> {
+        let account = self.current().await?;
+        let auth_manager = self.auth_manager.lock().await;
+        auth_manager
+            .get_account_credentials(&account.id)
+            .await
+            .map(|credentials| credentials.access_token)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 
-    async fn set_service_enabled(&mut self, id: &str, service: &str, enabled: bool) -> Result<()> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        let Some(mut account) = self.config.get_account(&uuid) else {
-            return Err(Error::AccountNotFound(id.to_string()).into());
-        };
+    async fn ensure_credentials(&self) -> Result<()> {
+        let mut account = self.current().await?;
+        let mut auth_manager = self.auth_manager.lock().await;
+        auth_manager
+            .ensure_credentials(&mut account)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    #[zbus(signal)]
+    async fn services_changed(
+        emitter: &SignalEmitter<'_>,
+        enabled_services: Vec<String>,
+    ) -> zbus::Result<()>;
+}
+
+impl AccountInterface {
+    async fn set_service_enabled(
+        &self,
+        emitter: &SignalEmitter<'_>,
+        service: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let mut account = self.current().await?;
         let Some(service) = Service::from_str(service.to_string()) else {
             return Err(Error::InvalidService(service.to_string()).into());
         };
         account.services.insert(service.clone(), enabled);
-        self.config
-            .save_account(&account)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {}", e)))?;
 
-        if let Some(service) = ServiceFactory::create_service(&account, &service) {
+        {
+            let mut config = self.config.lock().await;
+            config
+                .save_account(&account)
+                .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))?;
+        }
+
+        if let Some(svc) = ServiceFactory::create_service(&account, &service) {
             if enabled {
-                service.add_service().await?;
+                svc.add_service().await?;
             } else {
-                service.remove_service().await?;
+                svc.remove_service().await?;
             }
         }
-        Ok(())
-    }
 
-    async fn ensure_credentials(&mut self) -> Result<()> {
-        for account in self.config.accounts.iter_mut() {
-            self.auth_manager
-                .ensure_credentials(account)
-                .await
-                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        }
-        Ok(())
-    }
+        let enabled_services: Vec<String> = account
+            .services
+            .iter()
+            .filter(|(_, enabled)| **enabled)
+            .map(|(service, _)| service.to_string())
+            .collect();
 
-    async fn get_access_token(&mut self, id: &str) -> Result<String> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-
-        match self.config.get_account(&uuid) {
-            Some(account) => self
-                .auth_manager
-                .get_account_credentials(&account.id)
-                .await
-                .map(|credentials| credentials.access_token)
-                .map_err(|e| zbus::fdo::Error::Failed(e.to_string())),
-            None => Err(Error::AccountNotFound(id.to_string()).into()),
-        }
-    }
-
-    async fn get_refresh_token(&mut self, id: &str) -> Result<String> {
-        let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-
-        match self.config.get_account(&uuid) {
-            Some(account) => self
-                .auth_manager
-                .get_account_credentials(&account.id)
-                .await
-                .map(|credentials| credentials.refresh_token.unwrap_or_default())
-                .map_err(|e| zbus::fdo::Error::Failed(e.to_string())),
-            None => Err(Error::AccountNotFound(id.to_string()).into()),
-        }
-    }
-
-    async fn emit_account_added(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        account_id: &str,
-    ) -> Result<()> {
-        emitter.account_added(account_id).await.map_err(Into::into)
-    }
-
-    async fn emit_account_removed(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        account_id: &str,
-    ) -> Result<()> {
-        emitter
-            .account_removed(account_id)
+        Self::services_changed(emitter, enabled_services)
             .await
             .map_err(Into::into)
-    }
-
-    async fn emit_account_changed(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        account_id: &str,
-    ) -> Result<()> {
-        emitter
-            .account_changed(account_id)
-            .await
-            .map_err(Into::into)
-    }
-
-    async fn emit_account_exists(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> Result<()> {
-        emitter.account_exists().await.map_err(Into::into)
-    }
-
-    async fn emit_authentication_failed(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        reason: &str,
-    ) -> Result<()> {
-        emitter
-            .authentication_failed(reason)
-            .await
-            .map_err(Into::into)
-    }
-
-    #[zbus(signal)]
-    async fn account_added(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn account_removed(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn account_changed(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn account_exists(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn authentication_failed(emitter: &SignalEmitter<'_>, reason: &str) -> zbus::Result<()>;
-}
-
-impl AccountsInterface {
-    pub async fn new() -> crate::daemon::Result<Self> {
-        Ok(Self {
-            auth_manager: AuthManager::new().await?,
-            config: AccountsConfig::config(),
-        })
     }
 }

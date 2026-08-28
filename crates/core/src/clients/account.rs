@@ -3,50 +3,124 @@ use std::str::FromStr;
 use crate::{
     models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
-        AccountAddedStream, AccountChangedStream, AccountExistsStream, AccountRemovedStream,
-        AccountsProxy, AuthenticationFailedStream,
+        AccountAddedStream, AccountProxy, AccountRemovedStream, AuthenticationFailedStream,
+        ManagerProxy, ProviderProxy,
     },
 };
 use uuid::Uuid;
-use zbus::{Connection, fdo::Result};
+use zbus::{Connection, fdo::Result, zvariant::OwnedObjectPath};
 
 #[derive(Debug, Clone)]
 pub struct AccountsClient {
-    proxy: AccountsProxy<'static>,
+    connection: Connection,
+    manager: ManagerProxy<'static>,
 }
 
 impl AccountsClient {
     pub async fn new() -> Result<Self> {
         let connection = Connection::session().await?;
-        let proxy = AccountsProxy::new(&connection).await?;
-        Ok(Self { proxy })
+        let manager = ManagerProxy::new(&connection).await?;
+        Ok(Self { connection, manager })
+    }
+
+    fn account_path(id: &Uuid) -> OwnedObjectPath {
+        OwnedObjectPath::try_from(format!(
+            "/dev/edfloreshz/Accounts/Accounts/{}",
+            id.to_string().replace('-', "_")
+        ))
+        .expect("account object path is always a valid path")
+    }
+
+    async fn account_proxy(&self, path: OwnedObjectPath) -> Result<AccountProxy<'static>> {
+        let builder = AccountProxy::builder(&self.connection)
+            .path(path)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        builder
+            .build()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    async fn account_from_proxy(proxy: &AccountProxy<'static>) -> Result<Account> {
+        let id =
+            Uuid::from_str(&proxy.id().await?).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let provider = proxy.provider_id().await?;
+        let display_name = proxy.display_name().await?;
+        let identity = proxy.identity().await?;
+        let enabled = proxy.enabled().await?;
+        let available_services = proxy.available_services().await?;
+        let enabled_services = proxy.enabled_services().await?;
+        let created_at = proxy.created_at().await.unwrap_or_default();
+        let last_used = proxy.last_used().await.unwrap_or_default();
+        let email = proxy.email().await.unwrap_or_default();
+
+        let services = available_services
+            .into_iter()
+            .filter_map(Service::from_str)
+            .map(|service| {
+                let enabled = enabled_services.contains(&service.to_string());
+                (service, enabled)
+            })
+            .collect();
+
+        Ok(Account {
+            id,
+            provider,
+            display_name,
+            username: identity,
+            email: (!email.is_empty()).then_some(email),
+            enabled,
+            created_at: chrono::DateTime::from_str(&created_at).unwrap_or_else(|_| chrono::Utc::now()),
+            last_used: chrono::DateTime::from_str(&last_used).ok(),
+            services,
+        })
     }
 }
 
 impl AccountsClient {
     pub async fn list_accounts(&self) -> Result<Vec<Account>> {
-        self.proxy
-            .list_accounts()
-            .await
-            .map(|accounts| accounts.into_iter().map(Into::into).collect())
+        let paths = self.manager.list_accounts().await?;
+        let mut accounts = Vec::with_capacity(paths.len());
+        for path in paths {
+            let proxy = self.account_proxy(path).await?;
+            accounts.push(Self::account_from_proxy(&proxy).await?);
+        }
+        Ok(accounts)
     }
 
     pub async fn list_enabled_accounts(&self, service: Service) -> Result<Vec<Account>> {
-        self.proxy.list_accounts().await.map(|accounts| {
-            accounts
-                .into_iter()
-                .filter(|a| a.enabled && matches!(a.services.get(&service.to_string()), Some(true)))
-                .map(Into::into)
-                .collect()
-        })
+        let accounts = self.list_accounts().await?;
+        Ok(accounts
+            .into_iter()
+            .filter(|a| a.enabled && matches!(a.services.get(&service), Some(true)))
+            .collect())
     }
 
     pub async fn start_authentication(&mut self, provider: &Provider) -> Result<String> {
-        self.proxy.start_authentication(provider).await
+        self.manager.start_authentication(provider).await
     }
 
     pub async fn list_providers(&self) -> Result<Vec<DbusProviderInfo>> {
-        self.proxy.list_providers().await
+        let paths = self.manager.list_providers().await?;
+        let mut providers = Vec::with_capacity(paths.len());
+        for path in paths {
+            let proxy = ProviderProxy::builder(&self.connection)
+                .path(path)
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?
+                .build()
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+            providers.push(DbusProviderInfo {
+                id: proxy.id().await?,
+                name: proxy.name().await?,
+                services: proxy.services().await?,
+                icon: {
+                    let icon = proxy.icon_name().await?;
+                    (!icon.is_empty()).then_some(icon)
+                },
+            });
+        }
+        Ok(providers)
     }
 
     pub async fn complete_authentication(
@@ -54,25 +128,28 @@ impl AccountsClient {
         csrf_token: &str,
         authorization_code: &str,
     ) -> Result<Uuid> {
-        let account_id = self
-            .proxy
+        let path = self
+            .manager
             .complete_authentication(csrf_token, authorization_code)
             .await?;
-        Uuid::from_str(&account_id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+        let proxy = self.account_proxy(path).await?;
+        let id = proxy.id().await?;
+        Uuid::from_str(&id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 
-    pub async fn get_account(&self, id: &str) -> Result<Account> {
-        self.proxy.get_account(id).await.map(Into::into)
+    pub async fn get_account(&self, id: &Uuid) -> Result<Account> {
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        Self::account_from_proxy(&proxy).await
     }
 
     pub async fn remove_account(&mut self, id: &Uuid) -> Result<()> {
-        self.proxy.remove_account(&id.to_string()).await
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.remove().await
     }
 
     pub async fn set_account_enabled(&mut self, id: &Uuid, enabled: bool) -> Result<()> {
-        let id = id.to_string();
-        self.proxy.set_account_enabled(&id, enabled).await?;
-        self.proxy.emit_account_changed(&id).await
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.set_enabled(enabled).await
     }
 
     pub async fn set_service_enabled(
@@ -81,70 +158,35 @@ impl AccountsClient {
         service: &Service,
         enabled: bool,
     ) -> Result<()> {
-        let id = id.to_string();
-        self.proxy
-            .set_service_enabled(&id, &service.to_string(), enabled)
-            .await?;
-        self.proxy.emit_account_changed(&id).await
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        if enabled {
+            proxy.enable_service(&service.to_string()).await
+        } else {
+            proxy.disable_service(&service.to_string()).await
+        }
     }
 
     pub async fn ensure_credentials(&mut self, id: &Uuid) -> Result<()> {
-        self.proxy.ensure_credentials(&id.to_string()).await
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.ensure_credentials().await.map(|_| ())
     }
 
     pub async fn get_access_token(&mut self, id: &Uuid) -> Result<String> {
-        let id = id.to_string();
-        let access_token = self.proxy.get_access_token(&id).await?;
-        Ok(access_token)
-    }
-
-    pub async fn get_refresh_token(&mut self, id: &Uuid) -> Result<String> {
-        let id = id.to_string();
-        let refresh_token = self.proxy.get_refresh_token(&id).await?;
-        Ok(refresh_token)
-    }
-
-    pub async fn account_added(&self, account_id: &Uuid) -> Result<()> {
-        self.proxy.emit_account_added(&account_id.to_string()).await
-    }
-
-    pub async fn account_removed(&self, account_id: &Uuid) -> Result<()> {
-        self.proxy
-            .emit_account_removed(&account_id.to_string())
-            .await
-    }
-
-    pub async fn account_changed(&self, account_id: &Uuid) -> Result<()> {
-        self.proxy
-            .emit_account_changed(&account_id.to_string())
-            .await
-    }
-
-    pub async fn account_exists(&self) -> Result<()> {
-        self.proxy.emit_account_exists().await
-    }
-
-    pub async fn authentication_failed(&self, reason: &str) -> Result<()> {
-        self.proxy.emit_authentication_failed(reason).await
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.get_access_token().await
     }
 
     pub async fn receive_account_added(&self) -> zbus::Result<AccountAddedStream> {
-        self.proxy.receive_account_added().await
+        self.manager.receive_account_added().await
     }
 
     pub async fn receive_account_removed(&self) -> zbus::Result<AccountRemovedStream> {
-        self.proxy.receive_account_removed().await
+        self.manager.receive_account_removed().await
     }
 
-    pub async fn receive_account_changed(&self) -> zbus::Result<AccountChangedStream> {
-        self.proxy.receive_account_changed().await
-    }
-
-    pub async fn receive_account_exists(&self) -> zbus::Result<AccountExistsStream> {
-        self.proxy.receive_account_exists().await
-    }
-
-    pub async fn receive_authentication_failed(&self) -> zbus::Result<AuthenticationFailedStream> {
-        self.proxy.receive_authentication_failed().await
+    pub async fn receive_authentication_failed(
+        &self,
+    ) -> zbus::Result<AuthenticationFailedStream> {
+        self.manager.receive_authentication_failed().await
     }
 }

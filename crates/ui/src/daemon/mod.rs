@@ -1,17 +1,22 @@
 pub mod account;
 pub mod auth;
 pub mod error;
+pub mod manager;
+pub mod provider;
 pub mod services;
 pub mod storage;
 
-use accounts_core::{AccountsClient, ProviderRegistry, models::Account};
+use accounts_core::{ProviderRegistry, config::AccountsConfig, proxy::ManagerProxy};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell};
 use tracing::info;
 
-use account::AccountsInterface;
+use account::AccountInterface;
 pub use error::{Error, Result};
+use manager::ManagerInterface;
+use provider::ProviderInterface;
 use services::ServiceFactory;
 use zbus::Connection;
 
@@ -32,29 +37,44 @@ pub async fn run() -> Result<()> {
     );
 
     info!("Setting up D-Bus connection...");
-    let service = AccountsInterface::new()
-        .await
-        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
 
-    let accounts: Vec<Account> = service
-        .list_accounts()
-        .await
-        .into_iter()
-        .map(Into::into)
-        .collect();
+    let config = Arc::new(Mutex::new(AccountsConfig::config()));
+    let auth_manager = Arc::new(Mutex::new(
+        auth::AuthManager::new()
+            .await
+            .map_err(|e| zbus::Error::Failure(e.to_string()))?,
+    ));
 
-    CONNECTION
-        .set(
-            zbus::connection::Builder::session()?
-                .name("dev.edfloreshz.Accounts")?
-                .serve_at("/dev/edfloreshz/Accounts/Account", service)?
-                .build()
-                .await?,
-        )
-        .unwrap();
+    let accounts = config.lock().await.accounts.clone();
 
-    for account in accounts {
-        let services = ServiceFactory::create_services(&account);
+    let manager_iface = ManagerInterface::new(config.clone(), auth_manager.clone());
+
+    let mut builder = zbus::connection::Builder::session()?
+        .name("dev.edfloreshz.Accounts")?
+        .serve_at("/dev/edfloreshz/Accounts/Manager", manager_iface)?;
+
+    for account in &accounts {
+        let path = manager::account_object_path(&account.id);
+        builder = builder.serve_at(
+            path,
+            AccountInterface::new(account.id, config.clone(), auth_manager.clone()),
+        )?;
+    }
+
+    if let Some(registry) = REGISTRY.get() {
+        for manifest in registry.list() {
+            let path = format!(
+                "/dev/edfloreshz/Accounts/Providers/{}",
+                manifest.provider.id
+            );
+            builder = builder.serve_at(path, ProviderInterface::new(manifest.clone()))?;
+        }
+    }
+
+    CONNECTION.set(builder.build().await?).unwrap();
+
+    for account in &accounts {
+        let services = ServiceFactory::create_services(account);
         for service in services {
             service.add_service().await?;
         }
@@ -128,43 +148,39 @@ async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> R
 
     info!(?code, ?state, ?error, "Received OAuth redirect");
 
-    let Ok(mut client) = AccountsClient::new().await else {
+    let Ok(connection) = Connection::session().await else {
         tracing::error!("Accounts for COSMIC client failed to initialize");
+        return Ok(());
+    };
+    let Ok(mut manager) = ManagerProxy::new(&connection).await else {
+        tracing::error!("Failed to reach the Manager object");
         return Ok(());
     };
 
     if let Some(error) = error {
         let reason = error_description.unwrap_or(error);
         tracing::error!("Authentication failed: {reason}");
-        report_authentication_failure(&client, &reason).await;
+        report_authentication_failure(&manager, &reason).await;
         return Ok(());
     }
 
     let (Some(authorization_code), Some(csrf_token)) = (code, state) else {
         tracing::warn!("Redirect missing code/state parameters");
-        report_authentication_failure(&client, "The provider did not return a sign-in code").await;
+        report_authentication_failure(&manager, "The provider did not return a sign-in code")
+            .await;
         return Ok(());
     };
 
-    match client
+    match manager
         .complete_authentication(&csrf_token, &authorization_code)
         .await
     {
-        Ok(account_id) => {
-            tracing::info!("User authenticated with ID: {}", account_id);
-            if let Err(err) = client.account_added(&account_id).await {
-                tracing::error!("Failed to add account: {}", err);
-            }
-        }
-        Err(err) if err.to_string().to_lowercase().contains("already exists") => {
-            tracing::info!("Account already exists");
-            if let Err(err) = client.account_exists().await {
-                tracing::error!("Failed to signal that the account exists: {}", err);
-            }
+        Ok(account_path) => {
+            tracing::info!("User authenticated, account object at {}", *account_path);
         }
         Err(err) => {
             tracing::error!("Failed to authenticate user: {}", err);
-            report_authentication_failure(&client, &err.to_string()).await;
+            report_authentication_failure(&manager, &err.to_string()).await;
         }
     }
 
@@ -172,8 +188,11 @@ async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> R
 }
 
 /// Lets the front end know that a sign-in attempt it is waiting on will never complete.
-async fn report_authentication_failure(client: &AccountsClient, reason: &str) {
-    if let Err(err) = client.authentication_failed(reason).await {
+async fn report_authentication_failure(
+    manager: &accounts_core::proxy::ManagerProxy<'_>,
+    reason: &str,
+) {
+    if let Err(err) = manager.emit_authentication_failed(reason).await {
         tracing::error!("Failed to signal the authentication failure: {}", err);
     }
 }

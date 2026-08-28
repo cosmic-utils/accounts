@@ -77,7 +77,6 @@ pub enum Message {
     OpenAuthUrl,
     CancelAuth,
     AuthFailed(String),
-    AccountExists,
     AccountAdded(Uuid),
     AccountReady(Account),
 }
@@ -460,11 +459,7 @@ impl cosmic::Application for AppModel {
 
                 if let Some(mut client) = self.client.clone() {
                     tasks.push(Task::perform(
-                        async move {
-                            client.remove_account(&account_id).await?;
-                            client.account_removed(&account_id).await?;
-                            Ok(())
-                        },
+                        async move { client.remove_account(&account_id).await },
                         move |result: Result<(), zbus::fdo::Error>| match result {
                             Ok(()) => cosmic::action::app(Message::AccountRemoved(
                                 account_id,
@@ -545,18 +540,13 @@ impl cosmic::Application for AppModel {
                     error = error.as_str()
                 ))));
             }
-            Message::AccountExists => {
-                self.pending_auth = None;
-                tasks.push(self.update(Message::CloseDialog));
-                tasks.push(self.update(Message::ShowToast(fl!("account-exists"))));
-            }
             Message::AccountAdded(id) => {
                 self.pending_auth = None;
                 tasks.push(self.update(Message::CloseDialog));
 
                 if let Some(client) = self.client.clone() {
                     tasks.push(Task::perform(
-                        async move { client.get_account(&id.to_string()).await },
+                        async move { client.get_account(&id).await },
                         |account| match account {
                             Ok(account) => cosmic::action::app(Message::AccountReady(account)),
                             Err(err) => {
@@ -633,20 +623,12 @@ impl AppModel {
 }
 
 const ACCOUNT_ADDED: &str = "account_added";
-const ACCOUNT_CHANGED: &str = "account_changed";
 const ACCOUNT_REMOVED: &str = "account_removed";
-const ACCOUNT_EXISTS: &str = "account_exists";
 const AUTHENTICATION_FAILED: &str = "authentication_failed";
 
-const DAEMON_SIGNALS: [&str; 5] = [
-    ACCOUNT_ADDED,
-    ACCOUNT_CHANGED,
-    ACCOUNT_REMOVED,
-    ACCOUNT_EXISTS,
-    AUTHENTICATION_FAILED,
-];
+const DAEMON_SIGNALS: [&str; 3] = [ACCOUNT_ADDED, ACCOUNT_REMOVED, AUTHENTICATION_FAILED];
 
-/// Bridges one of the daemon's D-Bus signals into the application's message stream.
+/// Bridges one of the daemon's `Manager` D-Bus signals into the application's message stream.
 async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
     let Ok(client) = AccountsClient::new().await else {
         tracing::error!("Failed to connect to the daemon to watch for {signal}");
@@ -658,24 +640,14 @@ async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
             Ok(stream) => {
                 forward(stream, output, |signal| {
                     let args = signal.args().ok()?;
-                    Uuid::parse_str(args.account_id())
-                        .ok()
-                        .map(Message::AccountAdded)
+                    account_id_from_path(args.account()).map(Message::AccountAdded)
                 })
                 .await;
             }
             Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
         },
-        ACCOUNT_CHANGED => match client.receive_account_changed().await {
-            Ok(stream) => forward(stream, output, |_| Some(Message::LoadAccounts)).await,
-            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
-        },
         ACCOUNT_REMOVED => match client.receive_account_removed().await {
             Ok(stream) => forward(stream, output, |_| Some(Message::LoadAccounts)).await,
-            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
-        },
-        ACCOUNT_EXISTS => match client.receive_account_exists().await {
-            Ok(stream) => forward(stream, output, |_| Some(Message::AccountExists)).await,
             Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
         },
         AUTHENTICATION_FAILED => match client.receive_authentication_failed().await {
@@ -690,6 +662,12 @@ async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
         },
         unknown => tracing::error!("Unknown daemon signal: {unknown}"),
     }
+}
+
+/// The path is `/dev/edfloreshz/Accounts/Accounts/<uuid with `-` replaced by `_`>`.
+fn account_id_from_path(path: &zbus::zvariant::ObjectPath<'_>) -> Option<Uuid> {
+    let segment = path.as_str().rsplit('/').next()?;
+    Uuid::parse_str(&segment.replace('_', "-")).ok()
 }
 
 async fn forward<S, T>(

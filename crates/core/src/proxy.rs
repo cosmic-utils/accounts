@@ -2,51 +2,110 @@ use std::collections::HashMap;
 
 use zbus::fdo::Result;
 use zbus::proxy;
-
-use crate::models::{DbusAccount, DbusProviderInfo};
+use zbus::zvariant::OwnedObjectPath;
 
 #[proxy(
     default_service = "dev.edfloreshz.Accounts",
-    default_path = "/dev/edfloreshz/Accounts/Account",
-    interface = "dev.edfloreshz.Accounts.Account"
+    default_path = "/dev/edfloreshz/Accounts/Manager",
+    interface = "dev.edfloreshz.Accounts.Manager"
 )]
-pub trait Accounts {
-    async fn list_accounts(&self) -> Result<Vec<DbusAccount>>;
-    async fn get_account(&self, id: &str) -> Result<DbusAccount>;
-    async fn list_providers(&self) -> Result<Vec<DbusProviderInfo>>;
-    async fn start_authentication(&mut self, provider_name: &str) -> Result<String>;
+pub trait Manager {
+    async fn list_accounts(&self) -> Result<Vec<OwnedObjectPath>>;
+    async fn list_providers(&self) -> Result<Vec<OwnedObjectPath>>;
+    async fn start_authentication(&mut self, provider_id: &str) -> Result<String>;
     async fn complete_authentication(
         &mut self,
         csrf_token: &str,
         authorization_code: &str,
-    ) -> Result<String>;
-    async fn remove_account(&mut self, id: &str) -> Result<()>;
-    async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()>;
-    async fn set_service_enabled(&mut self, id: &str, service: &str, enabled: bool) -> Result<()>;
-    async fn get_access_token(&mut self, id: &str) -> Result<String>;
-    async fn get_refresh_token(&mut self, id: &str) -> Result<String>;
-    async fn ensure_credentials(&mut self, id: &str) -> Result<()>;
+    ) -> Result<OwnedObjectPath>;
 
-    async fn emit_account_added(&self, account_id: &str) -> Result<()>;
-    async fn emit_account_removed(&self, account_id: &str) -> Result<()>;
-    async fn emit_account_changed(&self, account_id: &str) -> Result<()>;
-    async fn emit_account_exists(&self) -> Result<()>;
     async fn emit_authentication_failed(&self, reason: &str) -> Result<()>;
 
-    #[zbus(signal)]
-    fn account_added(account_id: &str) -> Result<()>;
+    #[zbus(property)]
+    fn version(&self) -> Result<String>;
 
     #[zbus(signal)]
-    fn account_removed(account_id: &str) -> Result<()>;
+    fn account_added(account: OwnedObjectPath) -> Result<()>;
 
     #[zbus(signal)]
-    fn account_changed(account_id: &str) -> Result<()>;
-
-    #[zbus(signal)]
-    fn account_exists() -> Result<()>;
+    fn account_removed(account: OwnedObjectPath) -> Result<()>;
 
     #[zbus(signal)]
     fn authentication_failed(reason: &str) -> Result<()>;
+}
+
+#[proxy(
+    default_service = "dev.edfloreshz.Accounts",
+    interface = "dev.edfloreshz.Accounts.Account"
+)]
+pub trait Account {
+    #[zbus(property)]
+    fn id(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn provider_id(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn display_name(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn set_display_name(&self, value: &str) -> Result<()>;
+
+    #[zbus(property)]
+    fn identity(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn enabled(&self) -> Result<bool>;
+
+    #[zbus(property)]
+    fn set_enabled(&self, value: bool) -> Result<()>;
+
+    #[zbus(property)]
+    fn available_services(&self) -> Result<Vec<String>>;
+
+    #[zbus(property)]
+    fn enabled_services(&self) -> Result<Vec<String>>;
+
+    /// Extra property beyond the staged spec, kept so the UI can still show when an
+    /// account was created/last used without a dedicated history store.
+    #[zbus(property)]
+    fn created_at(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn last_used(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn email(&self) -> Result<String>;
+
+    async fn enable_service(&self, service: &str) -> Result<()>;
+    async fn disable_service(&self, service: &str) -> Result<()>;
+    async fn remove(&self) -> Result<()>;
+    async fn get_access_token(&self) -> Result<String>;
+    async fn ensure_credentials(&self) -> Result<()>;
+
+    #[zbus(signal)]
+    fn services_changed(enabled_services: Vec<String>) -> Result<()>;
+}
+
+#[proxy(
+    default_service = "dev.edfloreshz.Accounts",
+    interface = "dev.edfloreshz.Accounts.Provider"
+)]
+pub trait Provider {
+    #[zbus(property)]
+    fn id(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn name(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn icon_name(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn services(&self) -> Result<Vec<String>>;
+
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
 }
 
 #[proxy(
