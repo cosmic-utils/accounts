@@ -9,7 +9,6 @@ pub use clients::AccountsClient;
 pub use registry::{OAuthManifest, ProviderManifest, ProviderManifestInfo, ProviderRegistry};
 pub use service::*;
 
-// Re-exports
 pub use chrono::Local;
 pub use uuid::Uuid;
 pub use zbus;

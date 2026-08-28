@@ -36,7 +36,6 @@ struct CallbackQuery {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
     tracing_subscriber::fmt::init();
 
     info!("Starting Accounts for COSMIC daemon with integrated HTTP server...");

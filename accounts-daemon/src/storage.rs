@@ -57,7 +57,7 @@ impl CredentialStorage {
                 &format!("Account: {}", account_id),
                 HashMap::from([("account_id", account_id.to_string().as_str())]),
                 serialized.as_bytes(),
-                true, // replace existing
+                true,
                 "text/plain",
             )
             .await

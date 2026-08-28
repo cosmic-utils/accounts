@@ -13,12 +13,10 @@ pub struct AccountsInterface {
 
 #[interface(name = "dev.edfloreshz.Accounts.Account")]
 impl AccountsInterface {
-    /// List all accounts
     pub(crate) async fn list_accounts(&self) -> Vec<DbusAccount> {
         self.config.accounts.iter().map(Into::into).collect()
     }
 
-    /// Get a specific account by ID
     async fn get_account(&self, id: &str) -> Result<DbusAccount> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
@@ -42,7 +40,6 @@ impl AccountsInterface {
             .unwrap_or_default()
     }
 
-    /// Start OAuth2 authentication flow for a provider
     async fn start_authentication(&mut self, provider_name: &str) -> Result<String> {
         let Some(registry) = crate::REGISTRY.get() else {
             return Err(Error::InvalidProviderConfig.into());
@@ -67,7 +64,6 @@ impl AccountsInterface {
         }
     }
 
-    /// Complete OAuth2 authentication flow
     async fn complete_authentication(
         &mut self,
         csrf_token: &str,
@@ -92,7 +88,6 @@ impl AccountsInterface {
         }
     }
 
-    /// Remove an account
     async fn remove_account(&mut self, id: &str) -> Result<()> {
         let id = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
@@ -106,7 +101,6 @@ impl AccountsInterface {
         Ok(())
     }
 
-    /// Enable or disable an account
     async fn set_account_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
         let uuid = Uuid::parse_str(id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
 
@@ -223,8 +217,6 @@ impl AccountsInterface {
     ) -> Result<()> {
         emitter.account_exists().await.map_err(Into::into)
     }
-
-    /// Signals
 
     #[zbus(signal)]
     async fn account_added(emitter: &SignalEmitter<'_>, account_id: &str) -> zbus::Result<()>;

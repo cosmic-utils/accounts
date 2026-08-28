@@ -17,38 +17,25 @@ use std::collections::{HashMap, VecDeque};
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
-/// The application model stores app-specific state used to describe its interface and
-/// drive its logic.
 pub struct AppModel {
-    /// Application state which is managed by the COSMIC runtime.
     core: cosmic::Core,
-    /// Display a context drawer with the designated page if defined.
     context_page: ContextPage,
-    /// Contains items assigned to the nav bar panel.
     nav: nav_bar::Model,
-    /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
-    /// Dialog pages for the application.
     dialog_pages: VecDeque<DialogPage>,
-    /// Toasts for the application.
     toasts: widget::Toasts<Message>,
-    /// Client for interacting with the Accounts for COSMIC API.
     client: Option<AccountsClient>,
-    // Accounts data.
     accounts: Vec<Account>,
-    // Providers list, fetched from the daemon's manifest registry.
     providers: Vec<DbusProviderInfo>,
-    // Bytes fetched for providers whose manifest `icon` is a remote URL, keyed
-    // by that URL. Populated asynchronously; absent entries render the
-    // fallback icon until the fetch completes (or fails).
+    /// Bytes fetched for providers whose manifest `icon` is a remote URL, keyed
+    /// by that URL. Populated asynchronously; absent entries render the
+    /// fallback icon until the fetch completes (or fails).
     icon_cache: HashMap<String, Handle>,
     selected_account: Option<Account>,
 }
 
-/// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    // COSMIC
     OpenRepositoryUrl,
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
@@ -59,7 +46,6 @@ pub enum Message {
     LaunchUrl(String),
     ShowToast(String),
     CloseToast(ToastId),
-    // Accounts
     LoadAccounts,
     AddAccount(Uuid),
     DeleteAccount(Uuid),
@@ -69,25 +55,20 @@ pub enum Message {
     AccountSelected(Account),
     SetAccounts(Vec<Account>),
     AccountExists,
-    // Client
     CreateClient,
     SetClient(Option<AccountsClient>),
-    // Providers
     SetProviders(Vec<DbusProviderInfo>),
     ProviderIconLoaded(String, Option<Vec<u8>>),
-    // Auth
     StartAuth(String),
 }
 
 impl<'a> AppModel {
     fn welcome_view(&self) -> impl Into<Element<'_, Message>> {
-        // Main container
         let mut main_column = widget::Column::new()
             .spacing(spacing().space_m)
             .padding([spacing().space_m, spacing().space_xs])
             .align_x(Alignment::Center);
 
-        // App icon and title section
         let icon = widget::svg(widget::svg::Handle::from_memory(APP_ICON))
             .width(64)
             .height(64);
@@ -108,14 +89,12 @@ impl<'a> AppModel {
 
         main_column = main_column.push(header_section);
 
-        // Welcome message
         let welcome_text = widget::text(fl!("connect-accounts"))
             .align_x(Horizontal::Center)
             .class(cosmic::theme::Text::Default);
 
         main_column = main_column.push(welcome_text);
 
-        // Providers section
         if !self.providers.is_empty() {
             let mut providers_row = widget::Row::new().spacing(spacing().space_s);
             let mut current_row_count = 0;
@@ -123,7 +102,6 @@ impl<'a> AppModel {
             let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
 
             for provider in &self.providers {
-                // Add provider icon if available
                 let provider_button = widget::Row::new()
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
@@ -144,7 +122,6 @@ impl<'a> AppModel {
                 }
             }
 
-            // Add any remaining providers in the last row
             if current_row_count > 0 {
                 providers_column =
                     providers_column.push(widget::container(providers_row).center_x(Length::Fill));
@@ -152,14 +129,13 @@ impl<'a> AppModel {
 
             main_column = main_column.push(providers_column);
         } else {
-            // No providers available message
             let no_providers_text = widget::text(fl!("no-account-providers"))
                 .align_x(Horizontal::Center)
                 .class(cosmic::theme::Text::Default);
 
             main_column = main_column.push(no_providers_text);
         }
-        // Call to action
+
         let cta_text = widget::text(fl!("add-account-body"))
             .size(14)
             .align_x(Horizontal::Center)
@@ -167,22 +143,17 @@ impl<'a> AppModel {
 
         main_column = main_column.push(cta_text);
 
-        // Wrap in a container with proper centering
         widget::container(main_column)
             .center_x(Length::Fill)
             .width(Length::Fill)
     }
 
     fn add_account_dialog(&self) -> impl Into<Element<'_, Message>> {
-        // Main container
         let mut main_column = widget::Column::new()
             .spacing(spacing().space_m)
             .padding([spacing().space_m, spacing().space_xs])
             .align_x(Alignment::Center);
 
-        // App icon and title section
-
-        // Providers section
         if !self.providers.is_empty() {
             let mut providers_row = widget::Row::new().spacing(spacing().space_s);
             let mut current_row_count = 0;
@@ -190,7 +161,6 @@ impl<'a> AppModel {
             let mut providers_column = widget::Column::new().spacing(spacing().space_xs);
 
             for provider in &self.providers {
-                // Add provider icon if available
                 let provider_button = widget::Row::new()
                     .spacing(spacing().space_xxs)
                     .padding(spacing().space_m)
@@ -211,7 +181,6 @@ impl<'a> AppModel {
                 }
             }
 
-            // Add any remaining providers in the last row
             if current_row_count > 0 {
                 providers_column =
                     providers_column.push(widget::container(providers_row).center_x(Length::Fill));
@@ -219,7 +188,6 @@ impl<'a> AppModel {
 
             main_column = main_column.push(providers_column);
         } else {
-            // No providers available message
             let no_providers_text = widget::text("No account providers are currently available.")
                 .align_x(Horizontal::Center)
                 .class(cosmic::theme::Text::Default);
@@ -227,7 +195,6 @@ impl<'a> AppModel {
             main_column = main_column.push(no_providers_text);
         }
 
-        // Wrap in a container with proper centering
         widget::container(main_column)
             .center_x(Length::Fill)
             .width(Length::Fill)
@@ -387,15 +354,11 @@ impl<'a> AppModel {
     }
 }
 
-/// Create a COSMIC application from the app model
 impl<'a> cosmic::Application for AppModel {
-    /// The async executor that will be used to run your application's commands.
     type Executor = cosmic::executor::Default;
 
-    /// Data that your application receives to its init method.
     type Flags = ();
 
-    /// Messages which the application and its widgets will emit.
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
@@ -409,12 +372,10 @@ impl<'a> cosmic::Application for AppModel {
         &mut self.core
     }
 
-    /// Initializes the application with any given flags and startup commands.
     fn init(
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
@@ -437,7 +398,6 @@ impl<'a> cosmic::Application for AppModel {
         (app, Task::batch(tasks))
     }
 
-    /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
         let menu_bar = menu::bar(vec![
             menu::Tree::with_children(
@@ -463,7 +423,6 @@ impl<'a> cosmic::Application for AppModel {
         vec![menu_bar.into()]
     }
 
-    /// Enables the COSMIC application to create a nav bar with this model.
     fn nav_model(&self) -> Option<&nav_bar::Model> {
         Some(&self.nav)
     }
@@ -474,9 +433,7 @@ impl<'a> cosmic::Application for AppModel {
         Some(dialog.into())
     }
 
-    /// Called when a nav item is selected.
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
-        // Activate the page in the model.
         self.nav.activate(id);
 
         let mut tasks = vec![self.update_title()];
@@ -497,7 +454,6 @@ impl<'a> cosmic::Application for AppModel {
         Task::none()
     }
 
-    /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
         if !self.core.window.show_context {
             return None;
@@ -529,10 +485,6 @@ impl<'a> cosmic::Application for AppModel {
         })
     }
 
-    /// Describes the interface based on the current state of the application model.
-    ///
-    /// Application events will be processed through the view. Any messages emitted by
-    /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         let content = if self.selected_account.is_some() {
             self.account_view().into()
@@ -551,11 +503,6 @@ impl<'a> cosmic::Application for AppModel {
             .into()
     }
 
-    /// Register subscriptions for this application.
-    ///
-    /// Subscriptions are long-running async tasks running in the background which
-    /// emit messages to the application through a channel. They are started at the
-    /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
         if self.client.is_none() {
             return Subscription::none();
@@ -668,10 +615,6 @@ impl<'a> cosmic::Application for AppModel {
         ])
     }
 
-    /// Handles messages emitted by the application and its widgets.
-    ///
-    /// Tasks may be returned for asynchronous execution of code in the background
-    /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         let mut tasks = vec![];
 
@@ -679,15 +622,11 @@ impl<'a> cosmic::Application for AppModel {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
             }
-            Message::SubscriptionChannel => {
-                // For example purposes only.
-            }
+            Message::SubscriptionChannel => {}
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
-                    // Close the context drawer if the toggled context page is the same.
                     self.core.window.show_context = !self.core.window.show_context;
                 } else {
-                    // Open the context drawer to display the requested context page.
                     self.context_page = context_page;
                     self.core.window.show_context = true;
                 }
@@ -945,7 +884,6 @@ impl<'a> cosmic::Application for AppModel {
 }
 
 impl AppModel {
-    /// The about page for this app.
     pub fn about(&self) -> Element<'_, Message> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
@@ -979,7 +917,6 @@ impl AppModel {
             .into()
     }
 
-    /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
         let mut window_title = fl!("app-title");
 
@@ -996,7 +933,6 @@ impl AppModel {
     }
 }
 
-/// The context page to display in the context drawer.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum ContextPage {
     #[default]
