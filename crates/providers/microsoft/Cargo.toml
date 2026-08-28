@@ -1,0 +1,18 @@
+[package]
+name = "accounts_provider_microsoft"
+version = "0.1.0"
+edition = "2024"
+description = "Microsoft provider process for Accounts for COSMIC"
+
+[dependencies]
+accounts_core = { path = "../../core" }
+zbus = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "accounts_provider_microsoft"
+path = "src/main.rs"

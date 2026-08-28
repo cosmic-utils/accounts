@@ -12,17 +12,13 @@ build:
 build-lib:
     cargo build --release --lib
 
-# Build the daemon
-build-daemon:
-    cargo build --release -p accounts-daemon
-
-# Build the GUI (may fail if dependencies aren't available)
+# Build the app (GUI + background D-Bus service, one binary)
 build-gui:
-    cargo build --release -p accounts-ui
+    cargo build --release -p accounts_ui
 
 # Build the provider processes
 build-providers:
-    cargo build --release -p accounts-provider-google -p accounts-provider-microsoft
+    cargo build --release -p accounts_provider_google -p accounts_provider_microsoft
 
 # Run all tests
 test:
@@ -48,48 +44,44 @@ check: test lint check-format
 clean:
     cargo clean
 
-# Install daemon system-wide (requires sudo)
-install-daemon: build-daemon
-    sudo cp target/release/accounts-daemon /usr/bin/
-    sudo cp data/accounts.service /usr/share/dbus-1/services/
-
-# Install GUI system-wide (requires sudo)
+# Install the app system-wide (requires sudo). One binary serves both the GUI
+# and the D-Bus-activated background service (see crates/ui/data/cosmic-accounts.service).
 install-gui: build-gui
-    sudo cp target/release/accounts-ui /usr/bin/
+    sudo cp target/release/accounts_ui /usr/bin/
+    sudo cp crates/ui/data/cosmic-accounts.service /usr/share/dbus-1/services/
 
 # Install provider configurations (requires sudo)
 install-configs:
     sudo mkdir -p /etc/accounts/providers
-    sudo cp data/providers/*.toml /etc/accounts/providers/
+    sudo cp crates/ui/data/providers/*.toml /etc/accounts/providers/
     @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
 
 # Install everything (requires sudo)
-install: build install-daemon install-gui install-configs
+install: build install-gui install-configs
 
 # Uninstall system files (requires sudo)
 uninstall:
-    sudo rm -f /usr/bin/accounts-daemon
-    sudo rm -f /usr/bin/accounts-ui
-    sudo rm -f /usr/share/dbus-1/services/accounts.service
+    sudo rm -f /usr/bin/accounts_ui
+    sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
     sudo rm -rf /etc/accounts
 
-# Start the daemon service (user session)
+# Start the background service (user session)
 start-daemon:
-    systemctl --user enable accounts.service
-    systemctl --user start accounts.service
+    systemctl --user enable cosmic-accounts.service
+    systemctl --user start cosmic-accounts.service
 
-# Stop the daemon service (user session)
+# Stop the background service (user session)
 stop-daemon:
-    systemctl --user stop accounts.service
-    systemctl --user disable accounts.service
+    systemctl --user stop cosmic-accounts.service
+    systemctl --user disable cosmic-accounts.service
 
-# Check daemon status
+# Check background service status
 status:
-    systemctl --user status accounts.service
+    systemctl --user status cosmic-accounts.service
 
-# View daemon logs
+# View background service logs
 logs:
-    journalctl --user -u accounts.service -f
+    journalctl --user -u cosmic-accounts.service -f
 
 # Run CLI tool with list command
 cli-list:
@@ -102,51 +94,52 @@ cli-help:
 # Run the Google provider process in the foreground with debug logging.
 # Registers dev.edfloreshz.Accounts.Provider.Google on the session bus.
 run-google:
-    RUST_LOG=debug cargo run -p accounts-provider-google
+    RUST_LOG=debug cargo run -p accounts_provider_google
 
 # Run the Microsoft provider process in the foreground with debug logging.
 # Registers dev.edfloreshz.Accounts.Provider.Microsoft on the session bus.
 run-microsoft:
-    RUST_LOG=debug cargo run -p accounts-provider-microsoft
+    RUST_LOG=debug cargo run -p accounts_provider_microsoft
 
 # Run both provider processes in the foreground (Ctrl-C stops both).
-# Uses the manifests in accounts-daemon/data/providers/, which ProviderRegistry
+# Uses the manifests in crates/ui/data/providers/, which ProviderRegistry
 # reads as a dev-mode fallback without needing anything installed.
 run-providers:
     #!/usr/bin/env bash
     set -euo pipefail
     trap 'kill 0' EXIT
-    RUST_LOG=debug cargo run -p accounts-provider-google &
-    RUST_LOG=debug cargo run -p accounts-provider-microsoft &
+    RUST_LOG=debug cargo run -p accounts_provider_google &
+    RUST_LOG=debug cargo run -p accounts_provider_microsoft &
     wait
 
-# Run the daemon in the foreground with debug logging.
-# Run from the repo root so it picks up accounts-daemon/data/providers/*.toml.
+# Run the background D-Bus service in the foreground with debug logging,
+# without opening a window. Run from the repo root so it picks up
+# crates/ui/data/providers/*.toml.
 run-daemon:
-    RUST_LOG=debug cargo run -p accounts-daemon
+    ACCOUNTS_HEADLESS=1 RUST_LOG=debug cargo run -p accounts_ui
 
 # Run the GUI in the foreground with debug logging.
 run-ui:
-    RUST_LOG=debug cargo run -p accounts-ui
+    RUST_LOG=debug cargo run -p accounts_ui
 
-# Run providers + daemon + UI together for a full local test session.
-# Ctrl-C stops the whole stack. Requires a running D-Bus session bus and
-# secret-service provider (gnome-keyring/kwallet) for the daemon's credential
+# Run providers + the headless service + the GUI together for a full local
+# test session. Ctrl-C stops the whole stack. Requires a running D-Bus session
+# bus and secret-service provider (gnome-keyring/kwallet) for credential
 # storage; OAuth flows additionally need real client credentials in
-# accounts-daemon/data/providers/*.toml.
+# crates/ui/data/providers/*.toml.
 run-stack:
     #!/usr/bin/env bash
     set -euo pipefail
     trap 'kill 0' EXIT
     echo "Starting providers..."
-    RUST_LOG=debug cargo run -p accounts-provider-google &
-    RUST_LOG=debug cargo run -p accounts-provider-microsoft &
+    RUST_LOG=debug cargo run -p accounts_provider_google &
+    RUST_LOG=debug cargo run -p accounts_provider_microsoft &
     sleep 1
-    echo "Starting daemon..."
-    RUST_LOG=debug cargo run -p accounts-daemon &
+    echo "Starting background service..."
+    ACCOUNTS_HEADLESS=1 RUST_LOG=debug cargo run -p accounts_ui &
     sleep 1
     echo "Starting UI..."
-    RUST_LOG=debug cargo run -p accounts-ui
+    RUST_LOG=debug cargo run -p accounts_ui
 
 # List providers currently advertised by a running daemon over D-Bus
 # (requires busctl; useful to confirm capability advertisement without the UI).
@@ -187,10 +180,6 @@ example-add-google:
 example-show-accounts:
     cargo run --example cli -- list
 
-# Development: quick check without running tests
-quick-check:
-    cargo check --workspace --exclude accounts-ui
-
 # Development: full workspace build check
 workspace-check:
     cargo check --workspace
@@ -198,9 +187,8 @@ workspace-check:
 # Package for distribution (creates release builds and archives)
 package: clean build
     mkdir -p dist
-    cp target/release/accounts-daemon dist/
-    cp target/release/accounts-ui dist/ || echo "GUI build failed, skipping"
-    cp -r data dist/
+    cp target/release/accounts_ui dist/ || echo "Build failed, skipping"
+    cp -r crates/ui/data dist/
     cp README.md dist/
     cp LICENSE* dist/ || echo "No license files found"
     tar czf dist/accounts-$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "accounts") | .version').tar.gz -C dist .

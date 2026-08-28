@@ -1,56 +1,10 @@
-[package]
-edition = "2024"
-name = "accounts"
-version = "0.1.0"
-authors = ["Eduardo Flores <edfloreshz@gmail.com>"]
-description = "Online account management service for the COSMIC desktop."
-repository = "https://github.com/cosmic-utils/accounts"
-
-[dependencies]
-async-trait = "0.1.89"
-
-[dependencies.chrono]
-workspace = true
-
-[dependencies.cosmic-config]
-workspace = true
-
-[dependencies.oauth2]
-workspace = true
-
-[dependencies.reqwest]
-workspace = true
-
-[dependencies.serde]
-workspace = true
-
-[dependencies.serde_json]
-workspace = true
-
-[dependencies.tokio]
-workspace = true
-
-[dependencies.toml]
-workspace = true
-
-[dependencies.tracing]
-workspace = true
-
-[dependencies.tracing-subscriber]
-workspace = true
-
-[dependencies.uuid]
-workspace = true
-
-[dependencies.zbus]
-workspace = true
-
 [workspace]
+resolver = "2"
 members = [
-    "accounts-daemon",
-    "accounts-provider-google",
-    "accounts-provider-microsoft",
-    "accounts-ui",
+    "crates/core",
+    "crates/ui",
+    "crates/providers/google",
+    "crates/providers/microsoft",
 ]
 
 [workspace.dependencies]

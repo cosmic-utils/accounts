@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=dev.edfloreshz.Accounts.Provider.Google
-Exec=/usr/bin/accounts-provider-google

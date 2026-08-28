@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=dev.edfloreshz.Accounts.Provider.Microsoft
+Exec=/usr/bin/accounts_provider_microsoft

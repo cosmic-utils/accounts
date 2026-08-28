@@ -1,0 +1,18 @@
+[package]
+name = "accounts_provider_google"
+version = "0.1.0"
+edition = "2024"
+description = "Google provider process for Accounts for COSMIC"
+
+[dependencies]
+accounts_core = { path = "../../core" }
+zbus = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "accounts_provider_google"
+path = "src/main.rs"

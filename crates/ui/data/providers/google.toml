@@ -1,0 +1,27 @@
+[provider]
+id = "google"
+name = "Google"
+dbus_name = "dev.edfloreshz.Accounts.Provider.Google"
+exec = "/usr/bin/accounts_provider_google"
+services = ["Email", "Calendar", "Contacts", "Todo"]
+icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/crates/ui/resources/img/google.png"        # remote URL — fetched async, cached
+
+[oauth]
+client_id = "your-client-id.googleusercontent.com"
+client_secret = "your-client-secret"
+auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+token_url = "https://www.googleapis.com/oauth2/v3/token"
+redirect_uri = "http://localhost:49173/callback"
+scopes = [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/contacts",
+    "https://www.googleapis.com/auth/tasks",
+    "https://mail.google.com/",
+]
+
+[oauth.extra_params]
+access_type = "offline"
+prompt = "consent"
