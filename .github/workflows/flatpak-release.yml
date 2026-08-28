@@ -1,0 +1,42 @@
+name: Flatpak release build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Ensure cargo-sources.json is up to date
+        run: |
+          pip install aiohttp toml
+          curl -sL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json
+
+      # Real OAuth client credentials never touch the repo. This patches the
+      # placeholders in the checked-out working copy only — nothing here is
+      # committed back — before flatpak-builder bundles the files into /app.
+      - name: Inject OAuth credentials
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gettext
+          ./crates/ui/data/providers/inject-credentials.sh
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: accounts.flatpak
+          manifest-path: crates/ui/dev.edfloreshz.Accounts.json
+          cache-key: flatpak-builder-${{ github.sha }}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json",
+  "id": "dev.edfloreshz.Accounts",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "25.08",
+  "base": "com.system76.Cosmic.BaseApp",
+  "base-version": "stable",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+  "command": "accounts_ui",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--own-name=dev.edfloreshz.Accounts",
+    "--talk-name=dev.edfloreshz.Accounts.Provider.Google",
+    "--talk-name=dev.edfloreshz.Accounts.Provider.Microsoft",
+    "--talk-name=org.freedesktop.secrets",
+    "--filesystem=xdg-data/accounts:ro"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin"
+  },
+  "modules": [
+    {
+      "name": "accounts",
+      "buildsystem": "simple",
+      "build-options": {
+        "env": {
+          "CARGO_HOME": "/run/build/accounts/cargo"
+        }
+      },
+      "build-commands": [
+        "cargo --offline fetch --manifest-path Cargo.toml --verbose",
+        "cargo --offline build --release --verbose -p accounts_ui",
+        "install -Dm0755 ./target/release/accounts_ui /app/bin/accounts_ui",
+        "install -Dm0755 crates/ui/data/accounts-ui-daemon /app/bin/accounts-ui-daemon",
+        "install -Dm0644 crates/ui/resources/app.desktop /app/share/applications/dev.edfloreshz.Accounts.desktop",
+        "install -Dm0644 crates/ui/resources/app.metainfo.xml /app/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml",
+        "install -Dm0644 crates/ui/resources/icons/hicolor/scalable/apps/icon.svg /app/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg",
+        "install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.service /app/share/dbus-1/services/dev.edfloreshz.Accounts.service",
+        "install -Dm0644 crates/ui/data/providers/google.toml /app/share/accounts/providers/google.toml",
+        "install -Dm0644 crates/ui/data/providers/microsoft.toml /app/share/accounts/providers/microsoft.toml"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../.."
+        },
+        "cargo-sources.json"
+      ]
+    }
+  ]
+}

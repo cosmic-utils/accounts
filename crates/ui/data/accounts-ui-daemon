@@ -1,0 +1,4 @@
+#!/bin/sh
+# D-Bus activation files can't set environment variables, so this wrapper is
+# the actual Exec= target: it sets ACCOUNTS_HEADLESS and execs the real binary.
+exec env ACCOUNTS_HEADLESS=1 accounts_ui "$@"

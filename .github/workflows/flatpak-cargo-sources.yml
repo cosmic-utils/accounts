@@ -1,0 +1,40 @@
+name: Update Flatpak cargo sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - .github/workflows/flatpak-cargo-sources.yml
+  workflow_dispatch:
+
+jobs:
+  update-cargo-sources:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install flatpak-cargo-generator dependencies
+        run: pip install aiohttp toml
+
+      - name: Fetch flatpak-cargo-generator
+        run: |
+          curl -sL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+
+      - name: Generate crates/ui/cargo-sources.json
+        run: python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add crates/ui/cargo-sources.json
+          git diff --cached --quiet || git commit -m "chore: regenerate flatpak cargo-sources.json"
+          git push
