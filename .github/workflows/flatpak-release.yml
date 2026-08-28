@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +35,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
         run: |
-          sudo apt-get update && sudo apt-get install -y gettext
+          apt-get update && apt-get install -y gettext
           ./crates/ui/data/providers/inject-credentials.sh
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
