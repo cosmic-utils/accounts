@@ -147,7 +147,9 @@ impl cosmic::Application for AppModel {
                     vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
                 ),
             ),
-        ]);
+        ])
+        .item_width(menu::ItemWidth::Uniform(240))
+        .item_height(menu::ItemHeight::Uniform(40));
 
         vec![menu_bar.into()]
     }
@@ -478,7 +480,11 @@ impl cosmic::Application for AppModel {
             }
             Message::AccountRemoved(account_id, label) => {
                 self.accounts.retain(|account| account.id != account_id);
-                if self.selected_account.as_ref().is_some_and(|a| a.id == account_id) {
+                if self
+                    .selected_account
+                    .as_ref()
+                    .is_some_and(|a| a.id == account_id)
+                {
                     self.selected_account = None;
                 }
                 tasks.push(self.update(Message::ShowToast(fl!(
@@ -496,7 +502,9 @@ impl cosmic::Application for AppModel {
                 };
 
                 self.pending_auth = Some(PendingAuth::default());
-                tasks.push(self.update(Message::OpenDialog(DialogPage::SigningIn(provider.clone()))));
+                tasks.push(
+                    self.update(Message::OpenDialog(DialogPage::SigningIn(provider.clone()))),
+                );
                 tasks.push(Task::perform(
                     async move { client.start_authentication(&provider).await },
                     |result| match result {
