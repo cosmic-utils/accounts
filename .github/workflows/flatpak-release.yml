@@ -18,7 +18,7 @@ jobs:
 
       - name: Ensure cargo-sources.json is up to date
         run: |
-          pip install aiohttp toml
+          pip install aiohttp tomlkit
           curl -sL -o /tmp/flatpak-cargo-generator.py \
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json

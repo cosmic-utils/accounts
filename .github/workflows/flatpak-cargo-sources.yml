@@ -21,7 +21,7 @@ jobs:
           python-version: "3.x"
 
       - name: Install flatpak-cargo-generator dependencies
-        run: pip install aiohttp toml
+        run: pip install aiohttp tomlkit
 
       - name: Fetch flatpak-cargo-generator
         run: |
