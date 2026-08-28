@@ -17,19 +17,6 @@ fn main() -> cosmic::iced::Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // The desktop launches us with the redirect URI as our first argument
-    // when the OAuth flow's browser redirect comes back
-    // (see resources/app.desktop's x-scheme-handler and daemon::REDIRECT_SCHEME).
-    if let Some(arg) = std::env::args().nth(1)
-        && arg.starts_with(daemon::REDIRECT_SCHEME)
-    {
-        let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
-        runtime
-            .block_on(daemon::handle_redirect_uri(&arg))
-            .expect("failed to handle redirect");
-        return Ok(());
-    }
-
     if std::env::var("ACCOUNTS_HEADLESS").is_ok() {
         let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
         runtime

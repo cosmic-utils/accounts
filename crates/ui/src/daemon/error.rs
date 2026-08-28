@@ -1,5 +1,24 @@
 use thiserror::Error;
 
+type OAuth2RequestTokenError = oauth2::RequestTokenError<
+    oauth2::reqwest::Error<reqwest::Error>,
+    oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
+>;
+
+fn oauth2_message(err: &OAuth2RequestTokenError) -> String {
+    match err {
+        oauth2::RequestTokenError::ServerResponse(response) => format!(
+            "{}{}",
+            response.error(),
+            response
+                .error_description()
+                .map(|d| format!(": {d}"))
+                .unwrap_or_default()
+        ),
+        other => other.to_string(),
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Account not found: {0}")]
@@ -38,14 +57,8 @@ pub enum Error {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
-    #[error("OAuth2 error: {0}")]
-    OAuth2(
-        #[from]
-        oauth2::RequestTokenError<
-            oauth2::reqwest::Error<reqwest::Error>,
-            oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
-        >,
-    ),
+    #[error("OAuth2 error: {}", oauth2_message(.0))]
+    OAuth2(#[from] OAuth2RequestTokenError),
 
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -92,9 +105,10 @@ impl Into<zbus::fdo::Error> for Error {
                 zbus::fdo::Error::Failed(format!("Token expired for {account_id}"))
             }
             Error::Network(error) => zbus::fdo::Error::Failed(format!("Network error: {error}")),
-            Error::OAuth2(request_token_error) => {
-                zbus::fdo::Error::Failed(format!("OAuth2 error: {request_token_error}"))
-            }
+            Error::OAuth2(request_token_error) => zbus::fdo::Error::Failed(format!(
+                "OAuth2 error: {}",
+                oauth2_message(&request_token_error)
+            )),
             Error::Serialization(error) => {
                 zbus::fdo::Error::Failed(format!("Serialization error: {error}"))
             }
@@ -159,9 +173,10 @@ impl Into<zbus::Error> for Error {
                 zbus::Error::Failure(format!("Token expired for {account_id}"))
             }
             Error::Network(error) => zbus::Error::Failure(format!("Network error: {error}")),
-            Error::OAuth2(request_token_error) => {
-                zbus::Error::Failure(format!("OAuth2 error: {request_token_error}"))
-            }
+            Error::OAuth2(request_token_error) => zbus::Error::Failure(format!(
+                "OAuth2 error: {}",
+                oauth2_message(&request_token_error)
+            )),
             Error::Serialization(error) => {
                 zbus::Error::Failure(format!("Serialization error: {error}"))
             }

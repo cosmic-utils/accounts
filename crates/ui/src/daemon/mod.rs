@@ -20,8 +20,6 @@ pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
 
 const CALLBACK_PORT: u16 = 49173;
 
-pub const REDIRECT_SCHEME: &str = "dev.edfloreshz.accounts";
-
 pub async fn run() -> Result<()> {
     info!("Starting Accounts for COSMIC daemon...");
 
@@ -111,14 +109,6 @@ async fn run_callback_server(listener: TcpListener) {
             }
         }
     }
-}
-
-pub async fn handle_redirect_uri(uri: &str) -> Result<()> {
-    let url = url::Url::parse(uri).map_err(|_| Error::InvalidArguments(uri.to_string()))?;
-    let pairs = url
-        .query_pairs()
-        .map(|(k, v)| (k.into_owned(), v.into_owned()));
-    complete_from_query(pairs).await
 }
 
 async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> Result<()> {
