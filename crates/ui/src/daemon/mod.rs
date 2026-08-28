@@ -5,6 +5,8 @@ pub mod services;
 pub mod storage;
 
 use accounts_core::{AccountsClient, ProviderRegistry, models::Account};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::sync::OnceCell;
 use tracing::info;
 
@@ -16,9 +18,10 @@ use zbus::Connection;
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
 pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
 
+const CALLBACK_PORT: u16 = 49173;
+
 pub const REDIRECT_SCHEME: &str = "dev.edfloreshz.accounts";
 
-/// Runs the background D-Bus service.
 pub async fn run() -> Result<()> {
     info!("Starting Accounts for COSMIC daemon...");
 
@@ -61,25 +64,74 @@ pub async fn run() -> Result<()> {
 
     info!("D-Bus service started on: dev.edfloreshz.Accounts");
     info!("Object path: /dev/edfloreshz/Accounts");
+
+    let listener = TcpListener::bind(("127.0.0.1", CALLBACK_PORT))
+        .await
+        .map_err(Error::Io)?;
+    info!("OAuth callback listener on http://127.0.0.1:{CALLBACK_PORT}/callback");
+    tokio::spawn(run_callback_server(listener));
+
     info!("Accounts for COSMIC daemon started successfully");
 
     std::future::pending::<()>().await;
     Ok(())
 }
 
+async fn run_callback_server(listener: TcpListener) {
+    loop {
+        let Ok((mut stream, _)) = listener.accept().await else {
+            continue;
+        };
+
+        let mut buf = [0u8; 8192];
+        let Ok(n) = stream.read(&mut buf).await else {
+            continue;
+        };
+
+        let request_line = String::from_utf8_lossy(&buf[..n]);
+        let query = request_line
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|path| path.split_once('?'))
+            .map(|(_, query)| query.to_string());
+
+        let body = "<!DOCTYPE html><html><body><p>You can close this window.</p></body></html>";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes()).await;
+
+        if let Some(query) = query {
+            let pairs = url::form_urlencoded::parse(query.as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned()));
+            if let Err(err) = complete_from_query(pairs).await {
+                tracing::error!("Failed to handle OAuth callback: {err}");
+            }
+        }
+    }
+}
+
 pub async fn handle_redirect_uri(uri: &str) -> Result<()> {
     let url = url::Url::parse(uri).map_err(|_| Error::InvalidArguments(uri.to_string()))?;
+    let pairs = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()));
+    complete_from_query(pairs).await
+}
 
+async fn complete_from_query(pairs: impl Iterator<Item = (String, String)>) -> Result<()> {
     let mut code = None;
     let mut state = None;
     let mut error = None;
     let mut error_description = None;
-    for (key, value) in url.query_pairs() {
-        match &*key {
-            "code" => code = Some(value.into_owned()),
-            "state" => state = Some(value.into_owned()),
-            "error" => error = Some(value.into_owned()),
-            "error_description" => error_description = Some(value.into_owned()),
+    for (key, value) in pairs {
+        match key.as_str() {
+            "code" => code = Some(value),
+            "state" => state = Some(value),
+            "error" => error = Some(value),
+            "error_description" => error_description = Some(value),
             _ => {}
         }
     }
@@ -100,7 +152,7 @@ pub async fn handle_redirect_uri(uri: &str) -> Result<()> {
     }
 
     let (Some(authorization_code), Some(csrf_token)) = (code, state) else {
-        tracing::warn!("Redirect URI missing code/state parameters");
+        tracing::warn!("Redirect missing code/state parameters");
         return Ok(());
     };
 

@@ -1,12 +1,4 @@
 #!/bin/sh
-# Substitutes ${GOOGLE_CLIENT_ID}, ${GOOGLE_CLIENT_SECRET}, and
-# ${MICROSOFT_CLIENT_ID} placeholders in the provider manifests with real
-# values from the environment. Used by CI for release builds (from GitHub
-# Actions secrets) so real OAuth credentials never get committed; for local
-# development, just edit the placeholders directly instead of running this.
-#
-# POSIX sh + sed only (no bash, no envsubst/gettext) — the container this
-# runs in during CI is a minimal freedesktop-sdk image with neither.
 set -eu
 
 dir=$(dirname "$0")
