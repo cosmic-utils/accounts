@@ -15,13 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
       - name: Ensure cargo-sources.json is up to date
         run: |
-          pip install aiohttp tomlkit
+          apt-get update && apt-get install -y python3-pip
+          pip install --break-system-packages aiohttp tomlkit
           curl -sL -o /tmp/flatpak-cargo-generator.py \
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json
