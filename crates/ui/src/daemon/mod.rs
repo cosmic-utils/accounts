@@ -5,8 +5,6 @@ pub mod services;
 pub mod storage;
 
 use accounts_core::{AccountsClient, ProviderRegistry, models::Account};
-use axum::{Router, extract::Query, http::StatusCode, response::Html, routing::get};
-use serde::Deserialize;
 use tokio::sync::OnceCell;
 use tracing::info;
 
@@ -16,19 +14,13 @@ use services::ServiceFactory;
 use zbus::Connection;
 
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
-const CALLBACK_PORT: u16 = 49173;
 pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
 
-#[derive(Debug, Deserialize)]
-struct CallbackQuery {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
-    error_description: Option<String>,
-}
+pub const REDIRECT_SCHEME: &str = "dev.edfloreshz.accounts";
 
+/// Runs the background D-Bus service.
 pub async fn run() -> Result<()> {
-    info!("Starting Accounts for COSMIC daemon with integrated HTTP server...");
+    info!("Starting Accounts for COSMIC daemon...");
 
     REGISTRY
         .set(ProviderRegistry::load_default())
@@ -37,14 +29,6 @@ pub async fn run() -> Result<()> {
         "Loaded {} provider manifest(s)",
         REGISTRY.get().unwrap().list().len()
     );
-
-    let router = Router::new().route("/callback", get(handle_callback));
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", CALLBACK_PORT))
-        .await
-        .map_err(Error::Io)?;
-
-    info!("HTTP server will listen on http://127.0.0.1:{CALLBACK_PORT}");
-    info!("OAuth callback URL: http://127.0.0.1:{CALLBACK_PORT}/callback");
 
     info!("Setting up D-Bus connection...");
     let service = AccountsInterface::new()
@@ -77,127 +61,68 @@ pub async fn run() -> Result<()> {
 
     info!("D-Bus service started on: dev.edfloreshz.Accounts");
     info!("Object path: /dev/edfloreshz/Accounts");
-
     info!("Accounts for COSMIC daemon started successfully");
 
-    axum::serve(listener, router).await.unwrap();
-
+    std::future::pending::<()>().await;
     Ok(())
 }
 
-async fn handle_callback(Query(params): Query<CallbackQuery>) -> (StatusCode, Html<String>) {
-    info!("Received OAuth callback: {:?}", params);
+pub async fn handle_redirect_uri(uri: &str) -> Result<()> {
+    let url = url::Url::parse(uri).map_err(|_| Error::InvalidArguments(uri.to_string()))?;
+
+    let mut code = None;
+    let mut state = None;
+    let mut error = None;
+    let mut error_description = None;
+    for (key, value) in url.query_pairs() {
+        match &*key {
+            "code" => code = Some(value.into_owned()),
+            "state" => state = Some(value.into_owned()),
+            "error" => error = Some(value.into_owned()),
+            "error_description" => error_description = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+
+    info!(?code, ?state, ?error, "Received OAuth redirect");
 
     let Ok(mut client) = AccountsClient::new().await else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Html("Accounts for COSMIC Client failed to initialize".to_string()),
-        );
+        tracing::error!("Accounts for COSMIC client failed to initialize");
+        return Ok(());
     };
 
-    if let Some(error) = &params.error {
-        let html = format!(
-            r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authentication Error</title>
-                <style>
-                    body {{ font-family: sans-serif; margin: 40px; text-align: center; }}
-                    .error {{ color: #d73a49; background: #ffeef0; padding: 20px; border-radius: 8px; }}
-                </style>
-            </head>
-            <body>
-                <div class="error">
-                    <h2>Authentication Failed</h2>
-                    <p><strong>Error:</strong> {}</p>
-                    <p><strong>Description:</strong> {}</p>
-                    <p>You can close this window.</p>
-                </div>
-            </body>
-            </html>
-            "#,
-            error,
-            params
-                .error_description
-                .as_deref()
-                .unwrap_or("No description")
+    if let Some(error) = error {
+        tracing::error!(
+            "Authentication failed: {error}: {}",
+            error_description.as_deref().unwrap_or("no description")
         );
-        (StatusCode::BAD_REQUEST, Html(html))
-    } else if let (Some(authorization_code), Some(csrf_token)) = (params.code, params.state) {
-        let account_id = match client
-            .complete_authentication(&csrf_token, &authorization_code)
-            .await
-        {
-            Ok(account_id) => {
-                match client.account_added(&account_id).await {
-                    Ok(_) => {
-                        tracing::info!("Account added with ID: {}", account_id);
-                    }
-                    Err(err) => {
-                        tracing::error!("Failed to add account: {}", err);
-                    }
-                }
-                account_id
-            }
-            Err(_err) => {
-                if matches!(Error::AccountAlreadyExists, _err) {
-                    match client.account_exists().await {
-                        Ok(_) => {
-                            tracing::info!("Account already exists");
-                        }
-                        Err(err) => {
-                            tracing::error!("Failed to check account existence: {}", err);
-                        }
-                    }
-                }
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Html(format!("Failed to authenticate user: {}", _err)),
-                );
-            }
-        };
-
-        tracing::info!("User authenticated with ID: {}", account_id);
-
-        let html = r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authentication Success</title>
-                <style>
-                    body { font-family: sans-serif; margin: 40px; text-align: center; }
-                    .success { color: #28a745; background: #d4edda; padding: 20px; border-radius: 8px; }
-                </style>
-            </head>
-            <body>
-                <div class="success">
-                    <h2>Authentication Successful!</h2>
-                    <p>You can now close this window.</p>
-                </div>
-            </body>
-            </html>
-        "#;
-        (StatusCode::OK, Html(html.to_string()))
-    } else {
-        let html = r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Invalid Callback</title>
-                <style>
-                    body { font-family: sans-serif; margin: 40px; text-align: center; }
-                    .warning { color: #856404; background: #fff3cd; padding: 20px; border-radius: 8px; }
-                </style>
-            </head>
-            <body>
-                <div class="warning">
-                    <h2>Invalid Callback</h2>
-                    <p>Missing required parameters.</p>
-                </div>
-            </body>
-            </html>
-        "#;
-        (StatusCode::BAD_REQUEST, Html(html.to_string()))
+        return Ok(());
     }
+
+    let (Some(authorization_code), Some(csrf_token)) = (code, state) else {
+        tracing::warn!("Redirect URI missing code/state parameters");
+        return Ok(());
+    };
+
+    match client
+        .complete_authentication(&csrf_token, &authorization_code)
+        .await
+    {
+        Ok(account_id) => {
+            tracing::info!("User authenticated with ID: {}", account_id);
+            if let Err(err) = client.account_added(&account_id).await {
+                tracing::error!("Failed to add account: {}", err);
+            }
+        }
+        Err(err) => {
+            if err.to_string().to_lowercase().contains("already exists")
+                && client.account_exists().await.is_ok()
+            {
+                tracing::info!("Account already exists");
+            }
+            tracing::error!("Failed to authenticate user: {}", err);
+        }
+    }
+
+    Ok(())
 }
