@@ -23,17 +23,25 @@ jobs:
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o crates/ui/cargo-sources.json
 
+      - name: Install gettext (for envsubst)
+        run: apt-get update && apt-get install -y gettext
+
       # Real OAuth client credentials never touch the repo. This patches the
       # placeholders in the checked-out working copy only — nothing here is
       # committed back — before flatpak-builder bundles the files into /app.
-      - name: Inject OAuth credentials
-        env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+      #
+      # Secrets are exported via $GITHUB_ENV rather than a step-level `env:`
+      # block: in container jobs, a step's own `env:` clobbers PATH (a known
+      # GitHub Actions runner issue), which broke apt-get in the step above
+      # when it was combined into one step with `env:` set.
+      - name: Export credentials
         run: |
-          apt-get update && apt-get install -y gettext
-          ./crates/ui/data/providers/inject-credentials.sh
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> "$GITHUB_ENV"
+          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> "$GITHUB_ENV"
+          echo "MICROSOFT_CLIENT_ID=${{ secrets.MICROSOFT_CLIENT_ID }}" >> "$GITHUB_ENV"
+
+      - name: Inject OAuth credentials
+        run: ./crates/ui/data/providers/inject-credentials.sh
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
