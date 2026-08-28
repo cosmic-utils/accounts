@@ -4,8 +4,8 @@
 
   <p>A comprehensive online account management system for the COSMIC desktop environment</p>
 
-  ![window-light.png](https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
-  ![window-dark.png](https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/accounts-ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
+  ![window-light.png](crates/ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
+  ![window-dark.png](crates/ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
 </div>
 
 
