@@ -2,49 +2,14 @@
   <br>
   <h1>Accounts for COSMIC™</h1>
 
-  <p>A comprehensive online account management system for the COSMIC desktop environment</p>
+  <p>Sign in once, use everywhere</p>
 
   ![window-light.png](crates/ui/resources/screenshots/welcome-light.png#gh-light-mode-only)
   ![window-dark.png](crates/ui/resources/screenshots/welcome-dark.png#gh-dark-mode-only)
 </div>
 
-
-## Components
-**`accounts/` (Core Library)**
-- `Account`, `Provider`, and `Credential` models
-- Service abstraction layer for different services
-- D-Bus client proxy for communication
-
-**`accounts-daemon/`**
-- D-Bus service implementation (`dev.edfloreshz.Accounts`)
-- OAuth2 authentication manager
-- Secure credential storage
-- Provider configuration management
-- Integrated HTTP callback server
-
-**`accounts-ui/`**
-- COSMIC desktop application
-- Account listing and management
-- Provider selection and authentication flow
-- Visual account status and controls
-
-
-## Architecture
-
-### **Authentication System**
-- **OAuth2 with PKCE** for enhanced security
-- **Automatic token refresh** to maintain valid credentials
-- **Built-in callback server** for seamless auth flow
-- **CSRF protection** for auth requests
-
-### **Provider Support:**
-- **Google** - Gmail, Calendar, Contacts, Drive integration
-- **Microsoft** - Outlook, Office 365, OneDrive support
-- **Extensible provider system** for easy addition of new services
-
-### **Service Integration**
-- **Mail services** (Gmail, Outlook)
-- **Calendar synchronization** (Google Calendar, Outlook Calendar)
+Add your online account once, and every COSMIC app that needs it can use it. No more signing in
+separately in each app, and no passwords stored by apps that don't need them.
 
 ## Contributing
 
