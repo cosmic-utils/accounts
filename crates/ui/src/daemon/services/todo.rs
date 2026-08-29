@@ -14,6 +14,7 @@ use zbus::{
 };
 
 use crate::daemon::CONNECTION;
+use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TodoService {
@@ -39,39 +40,38 @@ impl TodoService {
         proxy
             .get_service_config("todo")
             .await
-            .map_err(|e| Error::Failed(format!("Provider did not return todo config: {e}")))
+            .map_err(|e| Error::Failed(format!("Provider did not return tasks config: {e}")))
     }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Todo")]
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Tasks")]
 impl TodoService {
+    /// CalDAV collection URL for VTODO components; may equal the calendar URL
+    /// for providers that don't separate them.
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         let config = self.fetch_config().await?;
         config
             .get("uri")
             .cloned()
-            .ok_or_else(|| Error::Failed("Provider did not return a todo uri".to_string()))
+            .ok_or_else(|| Error::Failed("Provider did not return a tasks uri".to_string()))
     }
 
+    /// Mirrors `Credentials.AuthMethod`.
     #[zbus(property)]
-    async fn accept_ssl_errors(&self) -> Result<bool> {
-        let config = self.fetch_config().await?;
-        Ok(config
-            .get("accept_ssl_errors")
-            .map(|v| v == "true")
-            .unwrap_or(false))
+    async fn auth_method(&self) -> Result<String> {
+        Ok("oauth2".to_string())
     }
 }
 
 #[async_trait]
 impl AccountService for TodoService {
     fn name(&self) -> &str {
-        "Todo"
+        "Tasks"
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Todo"
+        "dev.edfloreshz.Accounts.Endpoint.Tasks"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
@@ -86,7 +86,7 @@ impl AccountService for TodoService {
         }
 
         Ok(ServiceConfig {
-            service_type: "Todo".to_string(),
+            service_type: "Tasks".to_string(),
             provider_type: account.provider.clone(),
             settings,
         })
@@ -94,16 +94,13 @@ impl AccountService for TodoService {
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding a todo service for account {}",
+            "Adding the tasks endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .at(
-                    format!("/dev/edfloreshz/Accounts/Todo/{}", self.account.dbus_id()),
-                    self.clone(),
-                )
+                .at(endpoint_object_path(&self.account), self.clone())
                 .await?;
         }
         Ok(false)
@@ -111,22 +108,19 @@ impl AccountService for TodoService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing todo service for account {}",
+            "Removing the tasks endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<TodoService, String>(format!(
-                    "/dev/edfloreshz/Accounts/Todo/{}",
-                    self.account.dbus_id()
-                ))
+                .remove::<TodoService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)
     }
 
-    async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {
-        Ok(())
+    async fn ensure_credentials(&self, account: &mut Account) -> Result<()> {
+        refresh_account_credentials(account).await
     }
 }

@@ -11,6 +11,25 @@ pub use calendar::*;
 pub use contacts::*;
 pub use mail::*;
 pub use todo::*;
+use zbus::fdo::{Error, Result};
+
+/// D-Bus object path of the `Account` that an `Endpoint.*` interface is served
+/// on — the endpoints share the account's path rather than living under their
+/// own service tree.
+pub(crate) fn endpoint_object_path(account: &Account) -> String {
+    format!("/dev/edfloreshz/Accounts/Accounts/{}", account.dbus_id())
+}
+
+/// Refresh the account's stored credentials if they have expired, so the
+/// endpoint's consumer can rely on `Credentials.GetAccessToken` succeeding.
+pub(crate) async fn refresh_account_credentials(account: &mut Account) -> Result<()> {
+    let mut auth = crate::daemon::auth::AuthManager::new()
+        .await
+        .map_err(|e| Error::Failed(format!("could not open the auth manager: {e}")))?;
+    auth.ensure_credentials(account)
+        .await
+        .map_err(|e| Error::Failed(format!("could not refresh credentials: {e}")))
+}
 
 pub struct ServiceFactory;
 

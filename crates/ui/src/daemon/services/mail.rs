@@ -14,6 +14,10 @@ use zbus::{
 };
 
 use crate::daemon::CONNECTION;
+use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
+
+const DEFAULT_IMAP_PORT: u16 = 993;
+const DEFAULT_SMTP_PORT: u16 = 587;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MailService {
@@ -42,73 +46,34 @@ impl MailService {
             .map_err(|e| Error::Failed(format!("Provider did not return email config: {e}")))
     }
 
-    fn bool_setting(config: &HashMap<String, String>, key: &str, default: bool) -> bool {
-        config.get(key).map(|v| v == "true").unwrap_or(default)
-    }
-
     fn string_setting(config: &HashMap<String, String>, key: &str) -> Result<String> {
         config
             .get(key)
             .cloned()
             .ok_or_else(|| Error::Failed(format!("Provider did not return {key}")))
     }
+
+    fn port_setting(config: &HashMap<String, String>, key: &str, default: u16) -> u16 {
+        config
+            .get(key)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Mail")]
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Mail")]
 impl MailService {
-    #[zbus(property)]
-    async fn email_address(&self) -> Result<String> {
-        Ok(self.account.email.clone().unwrap_or_default())
-    }
-
-    #[zbus(property)]
-    async fn name(&self) -> Result<String> {
-        Ok(self.account.display_name.clone())
-    }
-
     #[zbus(property)]
     async fn imap_host(&self) -> Result<String> {
         Self::string_setting(&self.fetch_config().await?, "imap_host")
     }
 
     #[zbus(property)]
-    async fn imap_user_name(&self) -> Result<String> {
-        self.email_address().await
-    }
-
-    #[zbus(property)]
-    async fn imap_supported(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
+    async fn imap_port(&self) -> Result<u16> {
+        Ok(Self::port_setting(
             &self.fetch_config().await?,
-            "imap_supported",
-            true,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn imap_use_ssl(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "imap_use_ssl",
-            true,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn imap_use_tls(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "imap_use_tls",
-            false,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn imap_accept_ssl_errors(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "imap_accept_ssl_errors",
-            false,
+            "imap_port",
+            DEFAULT_IMAP_PORT,
         ))
     }
 
@@ -118,80 +83,18 @@ impl MailService {
     }
 
     #[zbus(property)]
-    async fn smtp_user_name(&self) -> Result<String> {
-        self.email_address().await
-    }
-
-    #[zbus(property)]
-    async fn smtp_supported(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
+    async fn smtp_port(&self) -> Result<u16> {
+        Ok(Self::port_setting(
             &self.fetch_config().await?,
-            "smtp_supported",
-            true,
+            "smtp_port",
+            DEFAULT_SMTP_PORT,
         ))
     }
 
+    /// Mirrors `Credentials.AuthMethod`.
     #[zbus(property)]
-    async fn smtp_use_auth(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_use_auth",
-            true,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_use_ssl(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_use_ssl",
-            false,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_use_tls(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_use_tls",
-            true,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_accept_ssl_errors(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_accept_ssl_errors",
-            false,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_auth_login(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_auth_login",
-            false,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_auth_plain(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_auth_plain",
-            false,
-        ))
-    }
-
-    #[zbus(property)]
-    async fn smtp_auth_xoauth2(&self) -> Result<bool> {
-        Ok(Self::bool_setting(
-            &self.fetch_config().await?,
-            "smtp_auth_xoauth2",
-            true,
-        ))
+    async fn auth_method(&self) -> Result<String> {
+        Ok("oauth2".to_string())
     }
 }
 
@@ -202,7 +105,7 @@ impl AccountService for MailService {
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Mail"
+        "dev.edfloreshz.Accounts.Endpoint.Mail"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
@@ -216,13 +119,6 @@ impl AccountService for MailService {
             settings.insert(key, value.into());
         }
 
-        if let Some(email) = &account.email {
-            settings.insert("email_address".to_string(), email.clone().into());
-            settings.insert("imap_user_name".to_string(), email.clone().into());
-            settings.insert("smtp_user_name".to_string(), email.clone().into());
-        }
-        settings.insert("name".to_string(), account.display_name.clone().into());
-
         Ok(ServiceConfig {
             service_type: "Mail".to_string(),
             provider_type: account.provider.clone(),
@@ -232,16 +128,13 @@ impl AccountService for MailService {
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding a mail service for account {}",
+            "Adding the mail endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .at(
-                    format!("/dev/edfloreshz/Accounts/Mail/{}", self.account.dbus_id()),
-                    self.clone(),
-                )
+                .at(endpoint_object_path(&self.account), self.clone())
                 .await?;
         }
         Ok(false)
@@ -249,22 +142,19 @@ impl AccountService for MailService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing mail service for account {}",
+            "Removing the mail endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<MailService, String>(format!(
-                    "/dev/edfloreshz/Accounts/Mail/{}",
-                    self.account.dbus_id()
-                ))
+                .remove::<MailService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)
     }
 
-    async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {
-        Ok(())
+    async fn ensure_credentials(&self, account: &mut Account) -> Result<()> {
+        refresh_account_credentials(account).await
     }
 }

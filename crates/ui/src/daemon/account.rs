@@ -165,6 +165,15 @@ impl AccountInterface {
         self.authorize_manage(Some(&header)).await?;
         let id = self.id;
 
+        // Drop the account's Endpoint.* interfaces (served on this same object
+        // path) before the account row and its Account/Credentials interfaces go.
+        let account = self.current().await?;
+        for service in ServiceFactory::create_services(&account) {
+            if let Err(e) = service.remove_service().await {
+                tracing::warn!("failed to remove endpoint for account {id}: {e}");
+            }
+        }
+
         {
             let mut config = self.config.lock().await;
             config

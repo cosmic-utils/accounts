@@ -97,12 +97,33 @@ pub trait Account {
     async fn enable_service(&self, service: &str) -> Result<()>;
     async fn disable_service(&self, service: &str) -> Result<()>;
     async fn remove(&self) -> Result<()>;
-    async fn get_access_token(&self) -> Result<String>;
     async fn ensure_credentials(&self) -> Result<()>;
     async fn reauthenticate(&self) -> Result<OwnedObjectPath>;
 
+    /// `a(sss)` of `(service, caller_identity, decision)`.
+    async fn list_grants(&self) -> Result<Vec<(String, String, String)>>;
+    async fn revoke_grant(&self, service: &str, caller_identity: &str) -> Result<()>;
+
     #[zbus(signal)]
     fn services_changed(enabled_services: Vec<String>) -> Result<()>;
+}
+
+/// `dev.edfloreshz.Accounts.Credentials` — served on the same object path as the
+/// owning `Account`. The only interface over which access tokens cross the bus.
+#[proxy(
+    default_service = "dev.edfloreshz.Accounts",
+    interface = "dev.edfloreshz.Accounts.Credentials"
+)]
+pub trait Credentials {
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
+
+    /// Returns a valid access token and its expiry (unix seconds, 0 = n/a) for
+    /// the named service, subject to polkit + the per-(account, service, caller)
+    /// consent grant.
+    async fn get_access_token(&self, service: &str) -> Result<(String, i64)>;
+
+    async fn invalidate_token(&self) -> Result<()>;
 }
 
 #[proxy(
@@ -126,58 +147,61 @@ pub trait Provider {
     fn auth_method(&self) -> Result<String>;
 }
 
+// The `Endpoint.*` interfaces say WHERE a service's data lives and HOW to
+// authenticate to it — never the data itself. They are served on the owning
+// Account's object path and appear/disappear as services are enabled/disabled.
+
 #[proxy(
-    interface = "dev.edfloreshz.Accounts.Calendar",
+    interface = "dev.edfloreshz.Accounts.Endpoint.Calendar",
     default_service = "dev.edfloreshz.Accounts"
 )]
 pub trait Calendar {
-    async fn uri(&self) -> Result<String>;
-    async fn accept_ssl_errors(&self) -> Result<bool>;
+    /// CalDAV collection/principal URL.
+    #[zbus(property)]
+    fn uri(&self) -> Result<String>;
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
 }
 
 #[proxy(
-    interface = "dev.edfloreshz.Accounts.Todo",
+    interface = "dev.edfloreshz.Accounts.Endpoint.Tasks",
     default_service = "dev.edfloreshz.Accounts"
 )]
-pub trait Todo {
-    async fn uri(&self) -> Result<String>;
-    async fn accept_ssl_errors(&self) -> Result<bool>;
+pub trait Tasks {
+    /// CalDAV collection URL for VTODO components; may equal the calendar URL.
+    #[zbus(property)]
+    fn uri(&self) -> Result<String>;
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
 }
 
 #[proxy(
-    interface = "dev.edfloreshz.Accounts.Contacts",
+    interface = "dev.edfloreshz.Accounts.Endpoint.Contacts",
     default_service = "dev.edfloreshz.Accounts"
 )]
 pub trait Contacts {
-    async fn uri(&self) -> Result<String>;
-    async fn accept_ssl_errors(&self) -> Result<bool>;
+    /// CardDAV collection/principal URL.
+    #[zbus(property)]
+    fn uri(&self) -> Result<String>;
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
 }
 
 #[proxy(
-    interface = "dev.edfloreshz.Accounts.Mail",
+    interface = "dev.edfloreshz.Accounts.Endpoint.Mail",
     default_service = "dev.edfloreshz.Accounts"
 )]
 pub trait Mail {
-    async fn email_address(&self) -> Result<String>;
-    async fn name(&self) -> Result<String>;
-
-    async fn imap_host(&self) -> Result<String>;
-    async fn imap_user_name(&self) -> Result<String>;
-    async fn imap_supported(&self) -> Result<bool>;
-    async fn imap_use_ssl(&self) -> Result<bool>;
-    async fn imap_use_tls(&self) -> Result<bool>;
-    async fn imap_accept_ssl_errors(&self) -> Result<bool>;
-
-    async fn smtp_host(&self) -> Result<String>;
-    async fn smtp_user_name(&self) -> Result<String>;
-    async fn smtp_supported(&self) -> Result<bool>;
-    async fn smtp_use_auth(&self) -> Result<bool>;
-    async fn smtp_use_ssl(&self) -> Result<bool>;
-    async fn smtp_use_tls(&self) -> Result<bool>;
-    async fn smtp_accept_ssl_errors(&self) -> Result<bool>;
-    async fn smtp_auth_login(&self) -> Result<bool>;
-    async fn smtp_auth_plain(&self) -> Result<bool>;
-    async fn smtp_auth_xoauth2(&self) -> Result<bool>;
+    #[zbus(property)]
+    fn imap_host(&self) -> Result<String>;
+    #[zbus(property)]
+    fn imap_port(&self) -> Result<u16>;
+    #[zbus(property)]
+    fn smtp_host(&self) -> Result<String>;
+    #[zbus(property)]
+    fn smtp_port(&self) -> Result<u16>;
+    #[zbus(property)]
+    fn auth_method(&self) -> Result<String>;
 }
 
 #[proxy(

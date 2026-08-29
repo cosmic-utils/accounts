@@ -12,7 +12,7 @@ impl MailClient {
         let connection = Connection::session().await?;
         let proxy = MailProxy::new(
             &connection,
-            format!("/dev/edfloreshz/Accounts/Mail/{}", account.dbus_id()),
+            format!("/dev/edfloreshz/Accounts/Accounts/{}", account.dbus_id()),
         )
         .await?;
         Ok(Self {
@@ -21,75 +21,23 @@ impl MailClient {
         })
     }
 
-    pub async fn email_address(&self) -> Result<String> {
-        self.proxy.email_address().await
-    }
-
-    pub async fn name(&self) -> Result<String> {
-        self.proxy.name().await
-    }
-
     pub async fn imap_host(&self) -> Result<String> {
         self.proxy.imap_host().await
     }
 
-    pub async fn imap_user_name(&self) -> Result<String> {
-        self.proxy.imap_user_name().await
-    }
-
-    pub async fn imap_supported(&self) -> Result<bool> {
-        self.proxy.imap_supported().await
-    }
-
-    pub async fn imap_use_ssl(&self) -> Result<bool> {
-        self.proxy.imap_use_ssl().await
-    }
-
-    pub async fn imap_use_tls(&self) -> Result<bool> {
-        self.proxy.imap_use_tls().await
-    }
-
-    pub async fn imap_accept_ssl_errors(&self) -> Result<bool> {
-        self.proxy.imap_accept_ssl_errors().await
+    pub async fn imap_port(&self) -> Result<u16> {
+        self.proxy.imap_port().await
     }
 
     pub async fn smtp_host(&self) -> Result<String> {
         self.proxy.smtp_host().await
     }
 
-    pub async fn smtp_user_name(&self) -> Result<String> {
-        self.proxy.smtp_user_name().await
+    pub async fn smtp_port(&self) -> Result<u16> {
+        self.proxy.smtp_port().await
     }
 
-    pub async fn smtp_supported(&self) -> Result<bool> {
-        self.proxy.smtp_supported().await
-    }
-
-    pub async fn smtp_use_auth(&self) -> Result<bool> {
-        self.proxy.smtp_use_auth().await
-    }
-
-    pub async fn smtp_use_ssl(&self) -> Result<bool> {
-        self.proxy.smtp_use_ssl().await
-    }
-
-    pub async fn smtp_use_tls(&self) -> Result<bool> {
-        self.proxy.smtp_use_tls().await
-    }
-
-    pub async fn smtp_accept_ssl_errors(&self) -> Result<bool> {
-        self.proxy.smtp_accept_ssl_errors().await
-    }
-
-    pub async fn smtp_auth_login(&self) -> Result<bool> {
-        self.proxy.smtp_auth_login().await
-    }
-
-    pub async fn smtp_auth_plain(&self) -> Result<bool> {
-        self.proxy.smtp_auth_plain().await
-    }
-
-    pub async fn smtp_auth_xoauth2(&self) -> Result<bool> {
-        self.proxy.smtp_auth_xoauth2().await
+    pub async fn auth_method(&self) -> Result<String> {
+        self.proxy.auth_method().await
     }
 }

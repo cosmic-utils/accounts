@@ -14,6 +14,7 @@ use zbus::{
 };
 
 use crate::daemon::CONNECTION;
+use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContactsService {
@@ -43,8 +44,9 @@ impl ContactsService {
     }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Contacts")]
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Contacts")]
 impl ContactsService {
+    /// CardDAV collection/principal URL.
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         let config = self.fetch_config().await?;
@@ -54,13 +56,10 @@ impl ContactsService {
             .ok_or_else(|| Error::Failed("Provider did not return a contacts uri".to_string()))
     }
 
+    /// Mirrors `Credentials.AuthMethod`.
     #[zbus(property)]
-    async fn accept_ssl_errors(&self) -> Result<bool> {
-        let config = self.fetch_config().await?;
-        Ok(config
-            .get("accept_ssl_errors")
-            .map(|v| v == "true")
-            .unwrap_or(false))
+    async fn auth_method(&self) -> Result<String> {
+        Ok("oauth2".to_string())
     }
 }
 
@@ -71,7 +70,7 @@ impl AccountService for ContactsService {
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Contacts"
+        "dev.edfloreshz.Accounts.Endpoint.Contacts"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
@@ -94,19 +93,13 @@ impl AccountService for ContactsService {
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding a contacts service for account {}",
+            "Adding the contacts endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .at(
-                    format!(
-                        "/dev/edfloreshz/Accounts/Contacts/{}",
-                        self.account.dbus_id()
-                    ),
-                    self.clone(),
-                )
+                .at(endpoint_object_path(&self.account), self.clone())
                 .await?;
         }
         Ok(false)
@@ -114,22 +107,19 @@ impl AccountService for ContactsService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing contacts service for account {}",
+            "Removing the contacts endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<ContactsService, String>(format!(
-                    "/dev/edfloreshz/Accounts/Contacts/{}",
-                    self.account.dbus_id()
-                ))
+                .remove::<ContactsService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)
     }
 
-    async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {
-        Ok(())
+    async fn ensure_credentials(&self, account: &mut Account) -> Result<()> {
+        refresh_account_credentials(account).await
     }
 }

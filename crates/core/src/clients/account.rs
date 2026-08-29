@@ -4,8 +4,8 @@ use std::str::FromStr;
 use crate::{
     models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
-        AccountAddedStream, AccountProxy, AccountRemovedStream, ManagerProxy, ProviderProxy,
-        RequestProxy,
+        AccountAddedStream, AccountProxy, AccountRemovedStream, CredentialsProxy, ManagerProxy,
+        ProviderProxy, RequestProxy,
     },
 };
 use uuid::Uuid;
@@ -21,7 +21,10 @@ impl AccountsClient {
     pub async fn new() -> Result<Self> {
         let connection = Connection::session().await?;
         let manager = ManagerProxy::new(&connection).await?;
-        Ok(Self { connection, manager })
+        Ok(Self {
+            connection,
+            manager,
+        })
     }
 
     fn account_path(id: &Uuid) -> OwnedObjectPath {
@@ -53,8 +56,8 @@ impl AccountsClient {
     }
 
     async fn account_from_proxy(proxy: &AccountProxy<'static>) -> Result<Account> {
-        let id =
-            Uuid::from_str(&proxy.id().await?).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let id = Uuid::from_str(&proxy.id().await?)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         let provider = proxy.provider_id().await?;
         let display_name = proxy.display_name().await?;
         let identity = proxy.identity().await?;
@@ -81,7 +84,8 @@ impl AccountsClient {
             username: identity,
             email: (!email.is_empty()).then_some(email),
             enabled,
-            created_at: chrono::DateTime::from_str(&created_at).unwrap_or_else(|_| chrono::Utc::now()),
+            created_at: chrono::DateTime::from_str(&created_at)
+                .unwrap_or_else(|_| chrono::Utc::now()),
             last_used: chrono::DateTime::from_str(&last_used).ok(),
             services,
         })
@@ -175,9 +179,20 @@ impl AccountsClient {
         proxy.ensure_credentials().await.map(|_| ())
     }
 
-    pub async fn get_access_token(&mut self, id: &Uuid) -> Result<String> {
-        let proxy = self.account_proxy(Self::account_path(id)).await?;
-        proxy.get_access_token().await
+    /// `(access_token, expires_at)` for one service, subject to polkit and the
+    /// per-(account, service, caller) consent grant. Served by the `Credentials`
+    /// interface on the account's own object path.
+    pub async fn get_access_token(
+        &mut self,
+        id: &Uuid,
+        service: &Service,
+    ) -> Result<(String, i64)> {
+        let proxy = CredentialsProxy::builder(&self.connection)
+            .path(Self::account_path(id))
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?
+            .build()
+            .await?;
+        proxy.get_access_token(&service.to_string()).await
     }
 
     /// Re-runs the OAuth2 flow for an existing account and refreshes its stored

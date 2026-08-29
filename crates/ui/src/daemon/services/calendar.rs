@@ -14,6 +14,7 @@ use zbus::{
 };
 
 use crate::daemon::CONNECTION;
+use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CalendarService {
@@ -43,8 +44,10 @@ impl CalendarService {
     }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Calendar")]
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Calendar")]
 impl CalendarService {
+    /// CalDAV collection/principal URL; the client discovers individual
+    /// calendars underneath via a normal CalDAV PROPFIND.
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         let config = self.fetch_config().await?;
@@ -54,13 +57,10 @@ impl CalendarService {
             .ok_or_else(|| Error::Failed("Provider did not return a calendar uri".to_string()))
     }
 
+    /// Mirrors `Credentials.AuthMethod`.
     #[zbus(property)]
-    async fn accept_ssl_errors(&self) -> Result<bool> {
-        let config = self.fetch_config().await?;
-        Ok(config
-            .get("accept_ssl_errors")
-            .map(|v| v == "true")
-            .unwrap_or(false))
+    async fn auth_method(&self) -> Result<String> {
+        Ok("oauth2".to_string())
     }
 }
 
@@ -71,7 +71,7 @@ impl AccountService for CalendarService {
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Calendar"
+        "dev.edfloreshz.Accounts.Endpoint.Calendar"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
@@ -94,19 +94,13 @@ impl AccountService for CalendarService {
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding a calendar service for account {}",
+            "Adding the calendar endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .at(
-                    format!(
-                        "/dev/edfloreshz/Accounts/Calendar/{}",
-                        self.account.dbus_id()
-                    ),
-                    self.clone(),
-                )
+                .at(endpoint_object_path(&self.account), self.clone())
                 .await?;
         }
         Ok(false)
@@ -114,22 +108,19 @@ impl AccountService for CalendarService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing calendar service for account {}",
+            "Removing the calendar endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<CalendarService, String>(format!(
-                    "/dev/edfloreshz/Accounts/Calendar/{}",
-                    self.account.dbus_id()
-                ))
+                .remove::<CalendarService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)
     }
 
-    async fn ensure_credentials(&self, _account: &mut Account) -> Result<()> {
-        Ok(())
+    async fn ensure_credentials(&self, account: &mut Account) -> Result<()> {
+        refresh_account_credentials(account).await
     }
 }

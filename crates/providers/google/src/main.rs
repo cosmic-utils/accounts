@@ -74,6 +74,8 @@ impl GoogleProvider {
             }
             "email" => {
                 config.insert("imap_host".to_string(), "imap.gmail.com".to_string());
+                config.insert("imap_port".to_string(), "993".to_string());
+                config.insert("smtp_port".to_string(), "587".to_string());
                 config.insert("imap_supported".to_string(), "true".to_string());
                 config.insert("imap_use_ssl".to_string(), "true".to_string());
                 config.insert("imap_use_tls".to_string(), "false".to_string());

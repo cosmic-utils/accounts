@@ -1,18 +1,18 @@
-use crate::{models::Account, proxy::TodoProxy};
+use crate::{models::Account, proxy::TasksProxy};
 use zbus::{Connection, fdo::Result};
 
 #[derive(Debug, Clone)]
-pub struct TodoClient {
-    proxy: TodoProxy<'static>,
+pub struct TasksClient {
+    proxy: TasksProxy<'static>,
     account: Account,
 }
 
-impl TodoClient {
+impl TasksClient {
     pub async fn new(account: &Account) -> Result<Self> {
         let connection = Connection::session().await?;
-        let proxy = TodoProxy::new(
+        let proxy = TasksProxy::new(
             &connection,
-            format!("/dev/edfloreshz/Accounts/Todo/{}", account.dbus_id()),
+            format!("/dev/edfloreshz/Accounts/Accounts/{}", account.dbus_id()),
         )
         .await?;
         Ok(Self {
@@ -25,7 +25,7 @@ impl TodoClient {
         self.proxy.uri().await
     }
 
-    pub async fn accept_ssl_errors(&self) -> Result<bool> {
-        self.proxy.accept_ssl_errors().await
+    pub async fn auth_method(&self) -> Result<String> {
+        self.proxy.auth_method().await
     }
 }

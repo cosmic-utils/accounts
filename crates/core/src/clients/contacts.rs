@@ -12,7 +12,7 @@ impl ContactsClient {
         let connection = Connection::session().await?;
         let proxy = ContactsProxy::new(
             &connection,
-            format!("/dev/edfloreshz/Accounts/Contacts/{}", account.dbus_id()),
+            format!("/dev/edfloreshz/Accounts/Accounts/{}", account.dbus_id()),
         )
         .await?;
         Ok(Self {
@@ -25,7 +25,7 @@ impl ContactsClient {
         self.proxy.uri().await
     }
 
-    pub async fn accept_ssl_errors(&self) -> Result<bool> {
-        self.proxy.accept_ssl_errors().await
+    pub async fn auth_method(&self) -> Result<String> {
+        self.proxy.auth_method().await
     }
 }
