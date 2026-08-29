@@ -63,8 +63,12 @@ impl Default for RequestState {
 pub type SharedRequestState = Arc<Mutex<RequestState>>;
 
 pub fn request_object_path(id: &str) -> OwnedObjectPath {
-    OwnedObjectPath::try_from(format!("/dev/edfloreshz/Accounts/Requests/{id}"))
-        .expect("request object path is always a valid path")
+    // D-Bus path elements are `[A-Za-z0-9_]` only; a UUID's dashes are not valid.
+    OwnedObjectPath::try_from(format!(
+        "/dev/edfloreshz/Accounts/Requests/{}",
+        id.replace('-', "_")
+    ))
+    .expect("request object path is always a valid path")
 }
 
 pub struct RequestInterface {
