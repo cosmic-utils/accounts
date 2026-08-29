@@ -109,6 +109,15 @@ impl ManagerInterface {
         emitter: &SignalEmitter<'_>,
         account: OwnedObjectPath,
     ) -> zbus::Result<()>;
+
+    /// Fired when any account's `Enabled` master switch is flipped, carrying that
+    /// account's object path and the new value.
+    #[zbus(signal)]
+    pub(crate) async fn account_toggled(
+        emitter: &SignalEmitter<'_>,
+        account: OwnedObjectPath,
+        enabled: bool,
+    ) -> zbus::Result<()>;
 }
 
 /// Registers a new `Request` object at `Status = "pending"` and spawns the async task that

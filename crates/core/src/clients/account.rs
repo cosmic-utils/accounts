@@ -4,8 +4,8 @@ use std::str::FromStr;
 use crate::{
     models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
-        AccountAddedStream, AccountProxy, AccountRemovedStream, CredentialsProxy, ManagerProxy,
-        ProviderProxy, RequestProxy,
+        AccountAddedStream, AccountProxy, AccountRemovedStream, AccountToggledStream,
+        CredentialsProxy, ManagerProxy, ProviderProxy, RequestProxy,
     },
 };
 use uuid::Uuid;
@@ -225,5 +225,9 @@ impl AccountsClient {
 
     pub async fn receive_account_removed(&self) -> zbus::Result<AccountRemovedStream> {
         self.manager.receive_account_removed().await
+    }
+
+    pub async fn receive_account_toggled(&self) -> zbus::Result<AccountToggledStream> {
+        self.manager.receive_account_toggled().await
     }
 }

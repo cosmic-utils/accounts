@@ -89,11 +89,7 @@ impl AccountInterface {
     }
 
     #[zbus(property)]
-    async fn set_enabled(
-        &self,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-        value: bool,
-    ) -> Result<()> {
+    async fn set_enabled(&self, value: bool) -> Result<()> {
         let mut account = self.current().await?;
         account.enabled = value;
         {
@@ -102,9 +98,8 @@ impl AccountInterface {
                 .save_account(&account)
                 .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))?;
         }
-        Self::account_toggled(&emitter, value)
-            .await
-            .map_err(Into::into)
+        self.emit_account_toggled(value).await;
+        Ok(())
     }
 
     #[zbus(property)]
@@ -295,14 +290,33 @@ impl AccountInterface {
         emitter: &SignalEmitter<'_>,
         enabled_services: Vec<String>,
     ) -> zbus::Result<()>;
-
-    /// Fired when the `Enabled` master switch is flipped, carrying the new value
-    /// (in addition to the standard `PropertiesChanged` for the property).
-    #[zbus(signal)]
-    async fn account_toggled(emitter: &SignalEmitter<'_>, enabled: bool) -> zbus::Result<()>;
 }
 
 impl AccountInterface {
+    /// Emits `Manager.AccountToggled` for this account, so a consumer watching
+    /// the daemon can react to it being enabled or disabled without diffing the
+    /// `Enabled` property.
+    async fn emit_account_toggled(&self, enabled: bool) {
+        let Some(connection) = crate::daemon::CONNECTION.get() else {
+            return;
+        };
+        let path = crate::daemon::manager::account_object_path(&self.id);
+        if let Ok(iface) = connection
+            .object_server()
+            .interface::<_, crate::daemon::manager::ManagerInterface>(
+                "/dev/edfloreshz/Accounts/Manager",
+            )
+            .await
+        {
+            let _ = crate::daemon::manager::ManagerInterface::account_toggled(
+                iface.signal_emitter(),
+                path,
+                enabled,
+            )
+            .await;
+        }
+    }
+
     /// Layer-1 gate for account mutations: `manage-own-accounts` (`auth_self`).
     /// A missing header (only possible for property writes that arrive without
     /// one) is treated as an unidentifiable caller and denied.

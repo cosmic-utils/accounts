@@ -26,6 +26,11 @@ pub trait Manager {
 
     #[zbus(signal)]
     fn account_removed(account: OwnedObjectPath) -> Result<()>;
+
+    /// Fired when any account's `Enabled` master switch is flipped, carrying that
+    /// account's object path and the new value.
+    #[zbus(signal)]
+    fn account_toggled(account: OwnedObjectPath, enabled: bool) -> Result<()>;
 }
 
 #[proxy(
@@ -106,11 +111,6 @@ pub trait Account {
 
     #[zbus(signal)]
     fn services_changed(enabled_services: Vec<String>) -> Result<()>;
-
-    /// Fired when the `Enabled` master switch is flipped through this interface,
-    /// carrying the new value (alongside the standard `PropertiesChanged`).
-    #[zbus(signal)]
-    fn account_toggled(enabled: bool) -> Result<()>;
 }
 
 /// `dev.edfloreshz.Accounts.Credentials` — served on the same object path as the
