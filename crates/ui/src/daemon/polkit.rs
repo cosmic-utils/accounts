@@ -22,9 +22,14 @@ pub const ACTION_GET_TOKEN: &str = "dev.edfloreshz.Accounts.get-token";
 pub const ACTION_REGISTER_PROVIDER: &str = "dev.edfloreshz.Accounts.register-provider";
 
 static SYSTEM_BUS: OnceCell<zbus::Connection> = OnceCell::const_new();
+static SESSION_BUS: OnceCell<zbus::Connection> = OnceCell::const_new();
 
 async fn system_bus() -> zbus::Result<&'static zbus::Connection> {
     SYSTEM_BUS.get_or_try_init(zbus::Connection::system).await
+}
+
+async fn session_bus() -> zbus::Result<&'static zbus::Connection> {
+    SESSION_BUS.get_or_try_init(zbus::Connection::session).await
 }
 
 /// Returns `true` only if polkit positively authorizes the message sender for
@@ -42,7 +47,21 @@ pub async fn check(header: &Header<'_>, action_id: &str) -> bool {
 }
 
 async fn check_inner(header: &Header<'_>, action_id: &str) -> zbus::Result<bool> {
-    let subject = Subject::new_for_message_header(header)
+    // polkit runs on the system bus; a `system-bus-name` subject built from the
+    // caller's *session*-bus name can't be resolved there. Resolve the caller's
+    // pid on the session bus and use a `unix-process` subject instead.
+    let sender = header
+        .sender()
+        .ok_or_else(|| zbus::Error::Failure("message has no sender".to_string()))?;
+    let dbus = zbus::fdo::DBusProxy::new(session_bus().await?).await?;
+    let credentials = dbus
+        .get_connection_credentials(zbus::names::BusName::from(sender.to_owned()))
+        .await?;
+    let pid = credentials
+        .process_id()
+        .ok_or_else(|| zbus::Error::Failure("caller has no pid".to_string()))?;
+
+    let subject = Subject::new_for_owner(pid, None, None)
         .map_err(|e| zbus::Error::Failure(format!("could not build polkit subject: {e}")))?;
     let authority = AuthorityProxy::new(system_bus().await?).await?;
     let result = authority
