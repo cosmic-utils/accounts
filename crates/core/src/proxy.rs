@@ -106,6 +106,11 @@ pub trait Account {
 
     #[zbus(signal)]
     fn services_changed(enabled_services: Vec<String>) -> Result<()>;
+
+    /// Fired when the `Enabled` master switch is flipped through this interface,
+    /// carrying the new value (alongside the standard `PropertiesChanged`).
+    #[zbus(signal)]
+    fn account_toggled(enabled: bool) -> Result<()>;
 }
 
 /// `dev.edfloreshz.Accounts.Credentials` — served on the same object path as the

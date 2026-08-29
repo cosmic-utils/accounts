@@ -89,13 +89,22 @@ impl AccountInterface {
     }
 
     #[zbus(property)]
-    async fn set_enabled(&self, value: bool) -> Result<()> {
+    async fn set_enabled(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        value: bool,
+    ) -> Result<()> {
         let mut account = self.current().await?;
         account.enabled = value;
-        let mut config = self.config.lock().await;
-        config
-            .save_account(&account)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))
+        {
+            let mut config = self.config.lock().await;
+            config
+                .save_account(&account)
+                .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to save account: {e}")))?;
+        }
+        Self::account_toggled(&emitter, value)
+            .await
+            .map_err(Into::into)
     }
 
     #[zbus(property)]
@@ -286,6 +295,11 @@ impl AccountInterface {
         emitter: &SignalEmitter<'_>,
         enabled_services: Vec<String>,
     ) -> zbus::Result<()>;
+
+    /// Fired when the `Enabled` master switch is flipped, carrying the new value
+    /// (in addition to the standard `PropertiesChanged` for the property).
+    #[zbus(signal)]
+    async fn account_toggled(emitter: &SignalEmitter<'_>, enabled: bool) -> zbus::Result<()>;
 }
 
 impl AccountInterface {
