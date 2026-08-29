@@ -8,7 +8,10 @@ pub enum Service {
     Email,
     Calendar,
     Contacts,
-    Todo,
+    /// `alias` keeps configs written before the `Todo` → `Tasks` rename readable;
+    /// they are rewritten as `Tasks` on the next save.
+    #[serde(alias = "Todo")]
+    Tasks,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -16,7 +19,8 @@ pub enum DbusService {
     Email,
     Calendar,
     Contacts,
-    Todo,
+    #[serde(alias = "Todo")]
+    Tasks,
 }
 
 impl Service {
@@ -25,7 +29,7 @@ impl Service {
             "email" => Some(Service::Email),
             "calendar" => Some(Service::Calendar),
             "contacts" => Some(Service::Contacts),
-            "todo" => Some(Service::Todo),
+            "tasks" | "todo" => Some(Service::Tasks),
             _ => None,
         }
     }
@@ -37,7 +41,7 @@ impl Display for Service {
             Service::Email => write!(f, "Email"),
             Service::Calendar => write!(f, "Calendar"),
             Service::Contacts => write!(f, "Contacts"),
-            Service::Todo => write!(f, "Todo"),
+            Service::Tasks => write!(f, "Tasks"),
         }
     }
 }
@@ -48,7 +52,7 @@ impl From<DbusService> for Service {
             DbusService::Email => Service::Email,
             DbusService::Calendar => Service::Calendar,
             DbusService::Contacts => Service::Contacts,
-            DbusService::Todo => Service::Todo,
+            DbusService::Tasks => Service::Tasks,
         }
     }
 }
@@ -59,7 +63,7 @@ impl From<Service> for DbusService {
             Service::Email => DbusService::Email,
             Service::Calendar => DbusService::Calendar,
             Service::Contacts => DbusService::Contacts,
-            Service::Todo => DbusService::Todo,
+            Service::Tasks => DbusService::Tasks,
         }
     }
 }
@@ -70,7 +74,7 @@ impl From<Service> for String {
             Service::Email => "Email".to_string(),
             Service::Calendar => "Calendar".to_string(),
             Service::Contacts => "Contacts".to_string(),
-            Service::Todo => "Todo".to_string(),
+            Service::Tasks => "Tasks".to_string(),
         }
     }
 }

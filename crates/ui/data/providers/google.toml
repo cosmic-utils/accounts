@@ -1,7 +1,7 @@
 [provider]
 id = "google"
 name = "Google"
-services = ["Email", "Calendar", "Contacts", "Todo"]
+services = ["Email", "Calendar", "Contacts", "Tasks"]
 icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/crates/ui/resources/img/google.png"        # remote URL — fetched async, cached
 
 [oauth]

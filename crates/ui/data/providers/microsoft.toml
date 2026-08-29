@@ -1,7 +1,7 @@
 [provider]
 id = "microsoft"
 name = "Microsoft"
-services = ["Email", "Calendar", "Contacts", "Todo"]
+services = ["Email", "Calendar", "Contacts", "Tasks"]
 icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/crates/ui/resources/img/microsoft.png"
 
 [oauth]

@@ -15,18 +15,18 @@ use crate::daemon::services::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TodoService {
+pub struct TasksService {
     account: Account,
 }
 
-impl TodoService {
+impl TasksService {
     pub fn new(account: Account) -> Self {
         Self { account }
     }
 }
 
 #[interface(name = "dev.edfloreshz.Accounts.Endpoint.Tasks")]
-impl TodoService {
+impl TasksService {
     /// CalDAV collection URL for VTODO components; may equal the calendar URL
     /// for providers that don't separate them.
     #[zbus(property)]
@@ -49,7 +49,7 @@ impl TodoService {
 }
 
 #[async_trait]
-impl AccountService for TodoService {
+impl AccountService for TasksService {
     fn name(&self) -> &str {
         "Tasks"
     }
@@ -59,7 +59,7 @@ impl AccountService for TodoService {
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.services.contains_key(&Service::Todo)
+        account.services.contains_key(&Service::Tasks)
     }
 
     async fn add_service(&self) -> Result<bool> {
@@ -84,7 +84,7 @@ impl AccountService for TodoService {
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<TodoService, String>(endpoint_object_path(&self.account))
+                .remove::<TasksService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)

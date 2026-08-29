@@ -1,7 +1,7 @@
 mod calendar;
 mod contacts;
 mod mail;
-mod todo;
+mod tasks;
 
 use accounts_core::{
     AccountService,
@@ -10,7 +10,7 @@ use accounts_core::{
 pub use calendar::*;
 pub use contacts::*;
 pub use mail::*;
-pub use todo::*;
+pub use tasks::*;
 use zbus::fdo::{Error, Result};
 
 /// D-Bus object path of the `Account` that an `Endpoint.*` interface is served
@@ -68,10 +68,10 @@ impl ServiceFactory {
             services.push(Box::new(MailService::new(account.clone())));
         }
 
-        if let Some((_, value)) = account.services.get_key_value(&Service::Todo)
+        if let Some((_, value)) = account.services.get_key_value(&Service::Tasks)
             && *value
         {
-            services.push(Box::new(TodoService::new(account.clone())));
+            services.push(Box::new(TasksService::new(account.clone())));
         }
 
         if let Some((_, value)) = account.services.get_key_value(&Service::Contacts)
@@ -87,7 +87,7 @@ impl ServiceFactory {
         match service {
             Service::Calendar => Some(Box::new(CalendarService::new(account.clone()))),
             Service::Email => Some(Box::new(MailService::new(account.clone()))),
-            Service::Todo => Some(Box::new(TodoService::new(account.clone()))),
+            Service::Tasks => Some(Box::new(TasksService::new(account.clone()))),
             Service::Contacts => Some(Box::new(ContactsService::new(account.clone()))),
         }
     }

@@ -4,8 +4,8 @@
 
 use crate::app::{AppModel, Message};
 use crate::fl;
-use accounts_core::models::{Account, IconSource, Service};
 use accounts_core::Local;
+use accounts_core::models::{Account, IconSource, Service};
 use chrono::{DateTime, Utc};
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::{Alignment, Length};
@@ -329,9 +329,9 @@ fn service_details(service: &Service) -> (String, String, &'static str) {
             fl!("service-contacts-description"),
             "x-office-address-book-symbolic",
         ),
-        Service::Todo => (
-            fl!("service-todo"),
-            fl!("service-todo-description"),
+        Service::Tasks => (
+            fl!("service-tasks"),
+            fl!("service-tasks-description"),
             "checkbox-checked-symbolic",
         ),
     }

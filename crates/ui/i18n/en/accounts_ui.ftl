@@ -26,8 +26,8 @@ service-calendar = Calendar
 service-calendar-description = Show events from this account.
 service-contacts = Contacts
 service-contacts-description = Show people from this account.
-service-todo = Tasks
-service-todo-description = Show tasks and to-do lists from this account.
+service-tasks = Tasks
+service-tasks-description = Show tasks and to-do lists from this account.
 
 # Adding an account
 add-account = Add account
