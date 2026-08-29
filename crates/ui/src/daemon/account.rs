@@ -1,9 +1,9 @@
-use crate::daemon::{Error, auth::AuthManager, services::ServiceFactory};
+use crate::daemon::{Error, auth::AuthManager, manager::create_request, services::ServiceFactory};
 use accounts_core::{config::AccountsConfig, models::Service};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use zbus::{fdo::Result, interface, object_server::SignalEmitter};
+use zbus::{fdo::Result, interface, object_server::SignalEmitter, zvariant::OwnedObjectPath};
 
 /// Per-account D-Bus object served at `/dev/edfloreshz/Accounts/Accounts/<dbus_id>`.
 ///
@@ -211,6 +211,11 @@ impl AccountInterface {
             .ensure_credentials(&mut account)
             .await
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    async fn reauthenticate(&self) -> Result<OwnedObjectPath> {
+        let account = self.current().await?;
+        create_request(account.provider, Some(self.id), self.auth_manager.clone()).await
     }
 
     #[zbus(signal)]

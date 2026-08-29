@@ -14,8 +14,22 @@ use zbus::Connection;
 
 use crate::daemon::{error::*, storage::CredentialStorage};
 
+struct PendingAuth {
+    provider_id: String,
+    verifier: PkceCodeVerifier,
+    request_id: String,
+    /// Set when this flow refreshes an existing account instead of creating a new one.
+    existing_account: Option<Uuid>,
+}
+
+pub struct CompletedAuth {
+    pub request_id: String,
+    pub existing_account: Option<Uuid>,
+    pub account: accounts_core::models::Account,
+}
+
 pub struct AuthManager {
-    pending_auth: HashMap<String, (String, PkceCodeVerifier)>,
+    pending_auth: HashMap<String, PendingAuth>,
     storage: CredentialStorage,
     connection: Connection,
 }
@@ -46,7 +60,12 @@ impl AuthManager {
         .set_redirect_uri(RedirectUrl::new(oauth.redirect_uri.clone())?))
     }
 
-    pub async fn start_auth_flow(&mut self, provider_id: String) -> Result<String> {
+    pub async fn start_auth_flow(
+        &mut self,
+        provider_id: String,
+        request_id: String,
+        existing_account: Option<Uuid>,
+    ) -> Result<(String, String)> {
         let registry = Self::registry()?;
         let manifest = registry
             .get(&provider_id)
@@ -69,35 +88,56 @@ impl AuthManager {
         }
 
         let (auth_url, csrf_token) = auth_request.url();
+        let csrf_secret = csrf_token.secret().clone();
 
+        self.pending_auth.insert(
+            csrf_secret.clone(),
+            PendingAuth {
+                provider_id,
+                verifier: pkce_verifier,
+                request_id,
+                existing_account,
+            },
+        );
+
+        Ok((auth_url.to_string(), csrf_secret))
+    }
+
+    /// Removes a pending flow without completing it, e.g. on `Request.Cancel` or timeout.
+    pub fn discard_pending(&mut self, csrf_token: &str) {
+        self.pending_auth.remove(csrf_token);
+    }
+
+    /// Looks up the `Request` id for a pending flow without consuming it, used when the
+    /// OAuth redirect carries a provider-side error instead of a code.
+    pub fn request_id_for_csrf(&self, csrf_token: &str) -> Option<String> {
         self.pending_auth
-            .insert(csrf_token.secret().clone(), (provider_id, pkce_verifier));
-
-        Ok(auth_url.to_string())
+            .get(csrf_token)
+            .map(|pending| pending.request_id.clone())
     }
 
     pub async fn complete_auth_flow(
         &mut self,
         csrf_token: String,
         authorization_code: String,
-    ) -> Result<accounts_core::models::Account> {
-        let (provider_id, pkce_verifier) =
-            self.pending_auth
-                .remove(&csrf_token)
-                .ok_or_else(|| Error::AuthenticationFailed {
-                    reason: "Invalid CSRF token".to_string(),
-                })?;
+    ) -> Result<CompletedAuth> {
+        let pending = self
+            .pending_auth
+            .remove(&csrf_token)
+            .ok_or_else(|| Error::AuthenticationFailed {
+                reason: "Invalid CSRF token".to_string(),
+            })?;
 
         let registry = Self::registry()?;
         let manifest = registry
-            .get(&provider_id)
-            .ok_or_else(|| Error::InvalidProvider(provider_id.clone()))?;
+            .get(&pending.provider_id)
+            .ok_or_else(|| Error::InvalidProvider(pending.provider_id.clone()))?;
 
         let client = Self::oauth_client(manifest)?;
 
         let token_result = client
             .exchange_code(AuthorizationCode::new(authorization_code))
-            .set_pkce_verifier(pkce_verifier)
+            .set_pkce_verifier(pending.verifier)
             .request_async(async_http_client)
             .await?;
 
@@ -109,10 +149,6 @@ impl AuthManager {
 
         let user_info = self.get_user_info(manifest, access_token).await?;
 
-        if AccountsConfig::config().account_exists(&user_info.username, &provider_id) {
-            return Err(Error::AccountAlreadyExists);
-        }
-
         let credentials = Credential {
             access_token: access_token.clone(),
             refresh_token,
@@ -121,23 +157,46 @@ impl AuthManager {
             token_type: "Bearer".to_string(),
         };
 
-        let account = accounts_core::models::Account {
-            id: Uuid::new_v4(),
-            provider: provider_id,
-            display_name: user_info.display_name,
-            username: user_info.username,
-            email: user_info.email,
-            enabled: true,
-            created_at: Utc::now(),
-            last_used: Some(Utc::now()),
-            services: manifest.default_services(),
+        let account = if let Some(existing_id) = pending.existing_account {
+            let mut account = AccountsConfig::config()
+                .get_account(&existing_id)
+                .ok_or_else(|| Error::AccountNotFound(existing_id.to_string()))?;
+            account.last_used = Some(Utc::now());
+
+            self.storage
+                .set_account_credentials(&account.id, &credentials)
+                .await?;
+
+            account
+        } else {
+            if AccountsConfig::config().account_exists(&user_info.username, &pending.provider_id) {
+                return Err(Error::AccountAlreadyExists);
+            }
+
+            let account = accounts_core::models::Account {
+                id: Uuid::new_v4(),
+                provider: pending.provider_id,
+                display_name: user_info.display_name,
+                username: user_info.username,
+                email: user_info.email,
+                enabled: true,
+                created_at: Utc::now(),
+                last_used: Some(Utc::now()),
+                services: manifest.default_services(),
+            };
+
+            self.storage
+                .set_account_credentials(&account.id, &credentials)
+                .await?;
+
+            account
         };
 
-        self.storage
-            .set_account_credentials(&account.id, &credentials)
-            .await?;
-
-        Ok(account)
+        Ok(CompletedAuth {
+            request_id: pending.request_id,
+            existing_account: pending.existing_account,
+            account,
+        })
     }
 
     async fn get_user_info(

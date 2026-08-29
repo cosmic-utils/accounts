@@ -42,6 +42,8 @@ pub struct AppModel {
 /// A sign-in that has been handed off to the browser and has not come back yet.
 #[derive(Default)]
 struct PendingAuth {
+    /// The `Request` object tracking this attempt, once `CreateAccount` returns it.
+    request_path: Option<zbus::zvariant::OwnedObjectPath>,
     /// The authorization URL, once the daemon has produced it. Kept around so the
     /// user can reopen the page if their browser never appeared.
     url: Option<String>,
@@ -73,6 +75,7 @@ pub enum Message {
 
     // Sign-in
     StartAuth(String),
+    RequestCreated(zbus::zvariant::OwnedObjectPath),
     AuthUrlReady(String),
     OpenAuthUrl,
     CancelAuth,
@@ -264,6 +267,20 @@ impl cosmic::Application for AppModel {
                     stream::channel(4, move |output| watch_daemon_signal(signal, output))
                 })
             }));
+        }
+
+        if let Some(path) = self
+            .pending_auth
+            .as_ref()
+            .and_then(|pending| pending.request_path.clone())
+        {
+            subscriptions.push(Subscription::run_with(
+                path.clone(),
+                |path: &zbus::zvariant::OwnedObjectPath| {
+                    let path = path.clone();
+                    stream::channel(4, move |output| watch_request(path, output))
+                },
+            ));
         }
 
         Subscription::batch(subscriptions)
@@ -501,15 +518,24 @@ impl cosmic::Application for AppModel {
                     self.update(Message::OpenDialog(DialogPage::SigningIn(provider.clone()))),
                 );
                 tasks.push(Task::perform(
-                    async move { client.start_authentication(&provider).await },
+                    async move { client.create_account(&provider).await },
                     |result| match result {
-                        Ok(url) => cosmic::action::app(Message::AuthUrlReady(url)),
+                        Ok(proxy) => cosmic::action::app(Message::RequestCreated(
+                            proxy.inner().path().to_owned().into(),
+                        )),
                         Err(err) => {
                             tracing::error!("Failed to start authentication: {err}");
                             cosmic::action::app(Message::AuthFailed(err.to_string()))
                         }
                     },
                 ));
+            }
+            Message::RequestCreated(path) => {
+                let Some(pending) = self.pending_auth.as_mut() else {
+                    // The user gave up while the daemon was preparing the request.
+                    return Task::none();
+                };
+                pending.request_path = Some(path);
             }
             Message::AuthUrlReady(url) => {
                 let Some(pending) = self.pending_auth.as_mut() else {
@@ -529,6 +555,21 @@ impl cosmic::Application for AppModel {
                 }
             }
             Message::CancelAuth => {
+                if let (Some(client), Some(path)) = (
+                    self.client.clone(),
+                    self.pending_auth
+                        .as_ref()
+                        .and_then(|pending| pending.request_path.clone()),
+                ) {
+                    tasks.push(Task::perform(
+                        async move {
+                            if let Ok(proxy) = client.request_proxy(path).await {
+                                let _ = proxy.cancel().await;
+                            }
+                        },
+                        |_| cosmic::action::none(),
+                    ));
+                }
                 self.pending_auth = None;
                 tasks.push(self.update(Message::CloseDialog));
             }
@@ -624,9 +665,8 @@ impl AppModel {
 
 const ACCOUNT_ADDED: &str = "account_added";
 const ACCOUNT_REMOVED: &str = "account_removed";
-const AUTHENTICATION_FAILED: &str = "authentication_failed";
 
-const DAEMON_SIGNALS: [&str; 3] = [ACCOUNT_ADDED, ACCOUNT_REMOVED, AUTHENTICATION_FAILED];
+const DAEMON_SIGNALS: [&str; 2] = [ACCOUNT_ADDED, ACCOUNT_REMOVED];
 
 /// Bridges one of the daemon's `Manager` D-Bus signals into the application's message stream.
 async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
@@ -650,17 +690,67 @@ async fn watch_daemon_signal(signal: &'static str, output: Sender<Message>) {
             Ok(stream) => forward(stream, output, |_| Some(Message::LoadAccounts)).await,
             Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
         },
-        AUTHENTICATION_FAILED => match client.receive_authentication_failed().await {
-            Ok(stream) => {
-                forward(stream, output, |signal| {
-                    let args = signal.args().ok()?;
-                    Some(Message::AuthFailed(args.reason().to_string()))
-                })
-                .await;
-            }
-            Err(err) => tracing::error!("Failed to watch for {signal}: {err}"),
-        },
         unknown => tracing::error!("Unknown daemon signal: {unknown}"),
+    }
+}
+
+/// Drives a single sign-in attempt: watches its `Request` object until it reaches a
+/// terminal status, emitting `AuthUrlReady`/`AccountAdded`/`AuthFailed` along the way.
+async fn watch_request(path: zbus::zvariant::OwnedObjectPath, mut output: Sender<Message>) {
+    let Ok(client) = AccountsClient::new().await else {
+        tracing::error!("Failed to connect to the daemon to watch the sign-in request");
+        return;
+    };
+    let Ok(proxy) = client.request_proxy(path).await else {
+        tracing::error!("Failed to reach the sign-in request object");
+        return;
+    };
+
+    if emit_request_state(&proxy, &mut output).await.is_break() {
+        return;
+    }
+
+    let Ok(mut changes) = proxy.receive_request_status_changed().await else {
+        tracing::error!("Failed to watch the sign-in request for status changes");
+        return;
+    };
+
+    while changes.next().await.is_some() {
+        if emit_request_state(&proxy, &mut output).await.is_break() {
+            break;
+        }
+    }
+}
+
+async fn emit_request_state(
+    proxy: &accounts_core::proxy::RequestProxy<'static>,
+    output: &mut Sender<Message>,
+) -> std::ops::ControlFlow<()> {
+    let status = proxy.status().await.unwrap_or_default();
+    match status.as_str() {
+        "needs-interaction" => {
+            if let Ok(uri) = proxy.interaction_uri().await
+                && !uri.is_empty()
+            {
+                let _ = output.send(Message::AuthUrlReady(uri)).await;
+            }
+            std::ops::ControlFlow::Continue(())
+        }
+        "succeeded" => {
+            if let Ok(account_path) = proxy.account().await
+                && let Some(id) = account_id_from_path(&account_path)
+            {
+                let _ = output.send(Message::AccountAdded(id)).await;
+            }
+            std::ops::ControlFlow::Break(())
+        }
+        "failed" => {
+            let reason = proxy.error_message().await.unwrap_or_default();
+            let _ = output.send(Message::AuthFailed(reason)).await;
+            std::ops::ControlFlow::Break(())
+        }
+        "cancelled" => std::ops::ControlFlow::Break(()),
+        _ => std::ops::ControlFlow::Continue(()),
     }
 }
 

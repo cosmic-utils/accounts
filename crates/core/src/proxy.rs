@@ -12,14 +12,11 @@ use zbus::zvariant::OwnedObjectPath;
 pub trait Manager {
     async fn list_accounts(&self) -> Result<Vec<OwnedObjectPath>>;
     async fn list_providers(&self) -> Result<Vec<OwnedObjectPath>>;
-    async fn start_authentication(&mut self, provider_id: &str) -> Result<String>;
-    async fn complete_authentication(
-        &mut self,
-        csrf_token: &str,
-        authorization_code: &str,
+    async fn create_account(
+        &self,
+        provider_id: &str,
+        params: HashMap<String, String>,
     ) -> Result<OwnedObjectPath>;
-
-    async fn emit_authentication_failed(&self, reason: &str) -> Result<()>;
 
     #[zbus(property)]
     fn version(&self) -> Result<String>;
@@ -29,9 +26,29 @@ pub trait Manager {
 
     #[zbus(signal)]
     fn account_removed(account: OwnedObjectPath) -> Result<()>;
+}
 
-    #[zbus(signal)]
-    fn authentication_failed(reason: &str) -> Result<()>;
+#[proxy(
+    default_service = "dev.edfloreshz.Accounts",
+    interface = "dev.edfloreshz.Accounts.Request"
+)]
+pub trait Request {
+    #[zbus(property)]
+    fn status(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn interaction_uri(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn error_message(&self) -> Result<String>;
+
+    #[zbus(property)]
+    fn account(&self) -> Result<OwnedObjectPath>;
+
+    async fn cancel(&self) -> Result<()>;
+
+    #[zbus(signal, name = "StatusChanged")]
+    fn request_status_changed(status: &str) -> Result<()>;
 }
 
 #[proxy(
@@ -82,6 +99,7 @@ pub trait Account {
     async fn remove(&self) -> Result<()>;
     async fn get_access_token(&self) -> Result<String>;
     async fn ensure_credentials(&self) -> Result<()>;
+    async fn reauthenticate(&self) -> Result<OwnedObjectPath>;
 
     #[zbus(signal)]
     fn services_changed(enabled_services: Vec<String>) -> Result<()>;

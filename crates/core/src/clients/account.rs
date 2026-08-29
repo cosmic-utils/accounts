@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::{
     models::{Account, DbusProviderInfo, Provider, Service},
     proxy::{
-        AccountAddedStream, AccountProxy, AccountRemovedStream, AuthenticationFailedStream,
-        ManagerProxy, ProviderProxy,
+        AccountAddedStream, AccountProxy, AccountRemovedStream, ManagerProxy, ProviderProxy,
+        RequestProxy,
     },
 };
 use uuid::Uuid;
@@ -33,6 +34,16 @@ impl AccountsClient {
 
     async fn account_proxy(&self, path: OwnedObjectPath) -> Result<AccountProxy<'static>> {
         let builder = AccountProxy::builder(&self.connection)
+            .path(path)
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        builder
+            .build()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    pub async fn request_proxy(&self, path: OwnedObjectPath) -> Result<RequestProxy<'static>> {
+        let builder = RequestProxy::builder(&self.connection)
             .path(path)
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         builder
@@ -96,8 +107,15 @@ impl AccountsClient {
             .collect())
     }
 
-    pub async fn start_authentication(&mut self, provider: &Provider) -> Result<String> {
-        self.manager.start_authentication(provider).await
+    /// Kicks off sign-in for `provider` and returns a proxy to the `Request` object that
+    /// tracks it; the caller watches `StatusChanged` (or polls `Status`) to know when to
+    /// open `InteractionUri` and when the flow reaches a terminal state.
+    pub async fn create_account(&mut self, provider: &Provider) -> Result<RequestProxy<'static>> {
+        let path = self
+            .manager
+            .create_account(provider, HashMap::new())
+            .await?;
+        self.request_proxy(path).await
     }
 
     pub async fn list_providers(&self) -> Result<Vec<DbusProviderInfo>> {
@@ -121,20 +139,6 @@ impl AccountsClient {
             });
         }
         Ok(providers)
-    }
-
-    pub async fn complete_authentication(
-        &mut self,
-        csrf_token: &str,
-        authorization_code: &str,
-    ) -> Result<Uuid> {
-        let path = self
-            .manager
-            .complete_authentication(csrf_token, authorization_code)
-            .await?;
-        let proxy = self.account_proxy(path).await?;
-        let id = proxy.id().await?;
-        Uuid::from_str(&id).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 
     pub async fn get_account(&self, id: &Uuid) -> Result<Account> {
@@ -176,17 +180,19 @@ impl AccountsClient {
         proxy.get_access_token().await
     }
 
+    /// Re-runs the OAuth2 flow for an existing account and refreshes its stored
+    /// credentials on success. Same `Request`-tracking pattern as `create_account`.
+    pub async fn reauthenticate(&mut self, id: &Uuid) -> Result<RequestProxy<'static>> {
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        let path = proxy.reauthenticate().await?;
+        self.request_proxy(path).await
+    }
+
     pub async fn receive_account_added(&self) -> zbus::Result<AccountAddedStream> {
         self.manager.receive_account_added().await
     }
 
     pub async fn receive_account_removed(&self) -> zbus::Result<AccountRemovedStream> {
         self.manager.receive_account_removed().await
-    }
-
-    pub async fn receive_authentication_failed(
-        &self,
-    ) -> zbus::Result<AuthenticationFailedStream> {
-        self.manager.receive_authentication_failed().await
     }
 }
