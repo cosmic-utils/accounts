@@ -16,6 +16,10 @@ build-lib:
 build-gui:
     cargo build --release -p accounts_ui
 
+# Build the out-of-process consent prompt helper
+build-consent-helper:
+    cargo build --release -p accounts_consent_helper
+
 # Build the provider processes
 build-providers:
     cargo build --release -p accounts_provider_google -p accounts_provider_microsoft
@@ -46,9 +50,11 @@ clean:
 
 # Install the app system-wide (requires sudo). One binary serves both the GUI
 # and the D-Bus-activated background service (see crates/ui/data/cosmic-accounts.service).
-install-gui: build-gui
+install-gui: build-gui build-consent-helper
     sudo cp target/release/accounts_ui /usr/bin/
+    sudo cp target/release/accounts-consent-helper /usr/bin/
     sudo cp crates/ui/data/cosmic-accounts.service /usr/share/dbus-1/services/
+    sudo install -Dm0644 crates/consent-helper/data/dev.edfloreshz.Accounts.ConsentPrompt.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
     sudo install -Dm0644 crates/ui/resources/app.desktop /usr/share/applications/dev.edfloreshz.Accounts.desktop
     sudo install -Dm0644 crates/ui/resources/app.metainfo.xml /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
     sudo install -Dm0644 crates/ui/resources/icons/hicolor/scalable/apps/icon.svg /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
@@ -66,7 +72,9 @@ install: build install-gui install-configs
 # Uninstall system files (requires sudo)
 uninstall:
     sudo rm -f /usr/bin/accounts_ui
+    sudo rm -f /usr/bin/accounts-consent-helper
     sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
+    sudo rm -f /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
     sudo rm -f /usr/share/applications/dev.edfloreshz.Accounts.desktop
     sudo rm -f /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
     sudo rm -f /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg

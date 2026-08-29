@@ -1,13 +1,14 @@
 use crate::daemon::{
-    Error, auth::AuthManager, error::TokenError, manager::create_request, polkit,
-    services::ServiceFactory,
+    Error, auth::AuthManager, credentials::CredentialsInterface, grants::GrantStore,
+    manager::create_request, polkit, services::ServiceFactory,
 };
 use accounts_core::{config::AccountsConfig, models::Service};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use zbus::{
-    fdo::Result, interface, message::Header, object_server::SignalEmitter, zvariant::OwnedObjectPath,
+    fdo::Result, interface, message::Header, object_server::SignalEmitter,
+    zvariant::OwnedObjectPath,
 };
 
 /// Per-account D-Bus object served at `/dev/edfloreshz/Accounts/Accounts/<dbus_id>`.
@@ -18,6 +19,7 @@ pub struct AccountInterface {
     pub(crate) id: Uuid,
     pub(crate) config: Arc<Mutex<AccountsConfig>>,
     pub(crate) auth_manager: Arc<Mutex<AuthManager>>,
+    pub(crate) grants: GrantStore,
 }
 
 impl AccountInterface {
@@ -25,11 +27,13 @@ impl AccountInterface {
         id: Uuid,
         config: Arc<Mutex<AccountsConfig>>,
         auth_manager: Arc<Mutex<AuthManager>>,
+        grants: GrantStore,
     ) -> Self {
         Self {
             id,
             config,
             auth_manager,
+            grants,
         }
     }
 
@@ -176,11 +180,19 @@ impl AccountInterface {
                 .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         }
 
+        if let Err(e) = self.grants.clear_account(&id).await {
+            tracing::warn!("failed to clear grants for removed account {id}: {e}");
+        }
+
         if let Some(connection) = crate::daemon::CONNECTION.get() {
             let path = format!(
                 "/dev/edfloreshz/Accounts/Accounts/{}",
                 id.to_string().replace('-', "_")
             );
+            connection
+                .object_server()
+                .remove::<CredentialsInterface, _>(path.clone())
+                .await?;
             connection
                 .object_server()
                 .remove::<AccountInterface, _>(path)
@@ -209,43 +221,35 @@ impl AccountInterface {
         Ok(())
     }
 
-    async fn get_access_token(
+    /// `a(sss)` of `(service, caller_identity, decision)` — the standing
+    /// layer-2 consent grants for this account. Lower sensitivity than issuing
+    /// tokens, so it lives here on `Account` rather than on `Credentials` and
+    /// is not polkit-gated: a settings UI reads it to show "N apps can read
+    /// this account's mail".
+    async fn list_grants(&self) -> Result<Vec<(String, String, String)>> {
+        self.grants
+            .list(&self.id)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// Drops one `(service, caller_identity)` grant. The next `GetAccessToken`
+    /// from that caller for that service prompts afresh. Gated by
+    /// `manage-own-accounts` like the other account mutations.
+    async fn revoke_grant(
         &self,
         #[zbus(header)] header: Header<'_>,
-    ) -> std::result::Result<String, TokenError> {
-        // Layer 1: coarse polkit authorization. The layer-2 grant-table check is
-        // applied on top of this in a later step.
-        if !polkit::check(&header, polkit::ACTION_GET_TOKEN).await {
-            return Err(TokenError::AccessDenied(format!(
-                "polkit denied {}",
-                polkit::ACTION_GET_TOKEN
-            )));
-        }
-
-        let mut account = self
-            .current()
+        service: &str,
+        caller_identity: &str,
+    ) -> Result<()> {
+        self.authorize_manage(Some(&header)).await?;
+        let Some(service) = crate::daemon::grants::normalize_service(service) else {
+            return Err(Error::InvalidService(service.to_string()).into());
+        };
+        self.grants
+            .revoke(&self.id, service, caller_identity)
             .await
-            .map_err(|e| TokenError::Failed(e.to_string()))?;
-
-        if !account.enabled {
-            return Err(TokenError::Disabled(format!(
-                "Account {} is disabled",
-                self.id
-            )));
-        }
-
-        let mut auth_manager = self.auth_manager.lock().await;
-        if let Err(e) = auth_manager.ensure_credentials(&mut account).await {
-            return Err(TokenError::NeedsReauth(format!(
-                "Credentials unavailable, call Reauthenticate: {e}"
-            )));
-        }
-
-        auth_manager
-            .get_account_credentials(&account.id)
-            .await
-            .map(|credentials| credentials.access_token)
-            .map_err(|e| TokenError::NeedsReauth(e.to_string()))
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
 
     async fn ensure_credentials(&self) -> Result<()> {

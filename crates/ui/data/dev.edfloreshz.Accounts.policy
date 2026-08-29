@@ -1,25 +1,70 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC
- "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+ "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/polkit/1/policyconfig.dtd">
+
+<!--
+  dev.edfloreshz.Accounts.policy
+
+  Deliberately narrow. Polkit actions here answer ONE question: "is this
+  caller *class* allowed to do this *kind* of thing at all". They do NOT
+  and CANNOT answer "is this caller allowed to touch THIS account" —
+  polkit has no notion of the account object path, only of the caller's
+  uid/pid and the static action id. That finer-grained, per-resource
+  question is answered by the daemon's own grant table (see
+  grants.md / GetAccessToken flow), checked AFTER polkit passes.
+
+  This is the fix for the GOA mistake: GOA effectively had one implicit
+  "you're on the session bus" gate protecting ALL accounts' tokens.
+  Splitting into (coarse polkit action) + (per-account grant, prompted
+  once, persisted) means a newly-installed unprivileged app cannot silently
+  read tokens for accounts it's never been granted, even though it
+  trivially passes the polkit check every other app on the system also
+  passes.
+-->
 <policyconfig>
 
-  <vendor>Accounts for COSMIC</vendor>
-  <vendor_url>https://github.com/cosmic-utils/accounts</vendor_url>
+  <vendor>dev.edfloreshz.Accounts</vendor>
+  <vendor_url>https://edfloreshz.dev</vendor_url>
 
+  <!--
+    Mutating your OWN account list: add/remove/enable/disable services.
+    auth_self — any authenticated session user may do this to their own
+    accounts without a password prompt (this is normal desktop app
+    behavior, same tier as changing your own settings). No admin bump;
+    this is not a security boundary, it just stops non-interactive
+    system-level callers (a system-bus daemon, a different user's
+    session) from touching accounts they don't own.
+  -->
   <action id="dev.edfloreshz.Accounts.manage-own-accounts">
-    <description>Manage online accounts</description>
-    <message>Authentication is required to add, remove, or change an online account</message>
+    <description>Manage your own online accounts</description>
+    <message>Authentication is required to modify your accounts</message>
     <defaults>
-      <allow_any>auth_self</allow_any>
-      <allow_inactive>auth_self</allow_inactive>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
       <allow_active>auth_self</allow_active>
     </defaults>
   </action>
 
+  <!--
+    THE important one. Gates Credentials.GetAccessToken and
+    Credentials.InvalidateToken at the coarse "can this caller class ever
+    ask for tokens" level. Passing this check is necessary but NOT
+    sufficient — the daemon still requires a per-(account, service,
+    caller) grant from its own table before actually returning a token.
+    See Gate 2 in the authorization flow.
+
+    allow_active is intentionally "yes" rather than "auth_self": we do
+    NOT want a second password prompt stacked on top of the per-account
+    consent prompt (that would be double friction for no security gain
+    — the per-account grant IS the meaningful checkpoint here). This
+    action mainly exists to let admins lock it down system-wide via
+    /etc/polkit-1/rules.d/ if desired (e.g. deny outright on a kiosk),
+    and to give the grant-table layer something to sit behind.
+  -->
   <action id="dev.edfloreshz.Accounts.get-token">
-    <description>Retrieve an access token for an online account</description>
-    <message>An application is requesting an access token for one of your online accounts</message>
+    <description>Access online account credentials</description>
+    <message>An application is requesting access to your account credentials</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -27,12 +72,20 @@
     </defaults>
   </action>
 
+  <!--
+    Runtime provider registration (Manager.RegisterProvider). This is
+    NOT the normal path (static .provider keyfiles need no polkit check,
+    they're vetted by being installed system files under a root-owned
+    directory) — this is for something claiming provider/handler trust
+    at runtime, which is a meaningfully bigger claim than "read my own
+    calendar token", so it gets auth_admin.
+  -->
   <action id="dev.edfloreshz.Accounts.register-provider">
-    <description>Register a system-wide account provider</description>
-    <message>Authentication is required to register a system-wide account provider</message>
+    <description>Register a new online account provider</description>
+    <message>Authentication is required to register a new account provider</message>
     <defaults>
-      <allow_any>auth_admin</allow_any>
-      <allow_inactive>auth_admin</allow_inactive>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
       <allow_active>auth_admin</allow_active>
     </defaults>
   </action>

@@ -24,9 +24,7 @@ pub const ACTION_REGISTER_PROVIDER: &str = "dev.edfloreshz.Accounts.register-pro
 static SYSTEM_BUS: OnceCell<zbus::Connection> = OnceCell::const_new();
 
 async fn system_bus() -> zbus::Result<&'static zbus::Connection> {
-    SYSTEM_BUS
-        .get_or_try_init(zbus::Connection::system)
-        .await
+    SYSTEM_BUS.get_or_try_init(zbus::Connection::system).await
 }
 
 /// Returns `true` only if polkit positively authorizes the message sender for

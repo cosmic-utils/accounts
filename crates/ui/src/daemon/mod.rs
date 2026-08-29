@@ -1,6 +1,10 @@
 pub mod account;
 pub mod auth;
+pub mod caller;
+pub mod consent;
+pub mod credentials;
 pub mod error;
+pub mod grants;
 pub mod manager;
 pub mod polkit;
 pub mod provider;
@@ -9,20 +13,27 @@ pub mod services;
 pub mod storage;
 
 use accounts_core::{ProviderRegistry, config::AccountsConfig};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, OnceCell};
 use tracing::info;
+use uuid::Uuid;
 
 use account::AccountInterface;
+use credentials::CredentialsInterface;
 pub use error::{Error, Result};
+use grants::GrantStore;
 use manager::ManagerInterface;
 use provider::ProviderInterface;
 use request::SharedRequestState;
 use services::ServiceFactory;
 use zbus::Connection;
+
+/// Shared set of account ids whose cached token a caller reported dead via
+/// `Credentials.InvalidateToken`; the next `GetAccessToken` forces a refresh.
+type StaleTokens = Arc<Mutex<HashSet<Uuid>>>;
 
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
 pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
@@ -58,6 +69,11 @@ pub async fn run() -> Result<()> {
 
     let accounts = config.lock().await.accounts.clone();
 
+    let grants = GrantStore::open()
+        .await
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+    let stale: StaleTokens = Arc::new(Mutex::new(HashSet::new()));
+
     let manager_iface = ManagerInterface::new(config.clone(), auth_manager.clone());
 
     let mut builder = zbus::connection::Builder::session()?
@@ -67,8 +83,23 @@ pub async fn run() -> Result<()> {
     for account in &accounts {
         let path = manager::account_object_path(&account.id);
         builder = builder.serve_at(
+            path.clone(),
+            AccountInterface::new(
+                account.id,
+                config.clone(),
+                auth_manager.clone(),
+                grants.clone(),
+            ),
+        )?;
+        builder = builder.serve_at(
             path,
-            AccountInterface::new(account.id, config.clone(), auth_manager.clone()),
+            CredentialsInterface::new(
+                account.id,
+                config.clone(),
+                auth_manager.clone(),
+                grants.clone(),
+                stale.clone(),
+            ),
         )?;
     }
 
@@ -98,7 +129,13 @@ pub async fn run() -> Result<()> {
         .await
         .map_err(Error::Io)?;
     info!("OAuth callback listener on http://127.0.0.1:{CALLBACK_PORT}/callback");
-    tokio::spawn(run_callback_server(listener, config.clone(), auth_manager.clone()));
+    tokio::spawn(run_callback_server(
+        listener,
+        config.clone(),
+        auth_manager.clone(),
+        grants.clone(),
+        stale.clone(),
+    ));
 
     info!("Accounts for COSMIC daemon started successfully");
 
@@ -110,6 +147,8 @@ async fn run_callback_server(
     listener: TcpListener,
     config: Arc<Mutex<AccountsConfig>>,
     auth_manager: Arc<Mutex<auth::AuthManager>>,
+    grants: GrantStore,
+    stale: StaleTokens,
 ) {
     loop {
         let Ok((mut stream, _)) = listener.accept().await else {
@@ -139,7 +178,14 @@ async fn run_callback_server(
         if let Some(query) = query {
             let pairs = url::form_urlencoded::parse(query.as_bytes())
                 .map(|(k, v)| (k.into_owned(), v.into_owned()));
-            complete_from_query(pairs, config.clone(), auth_manager.clone()).await;
+            complete_from_query(
+                pairs,
+                config.clone(),
+                auth_manager.clone(),
+                grants.clone(),
+                stale.clone(),
+            )
+            .await;
         }
     }
 }
@@ -151,6 +197,8 @@ async fn complete_from_query(
     pairs: impl Iterator<Item = (String, String)>,
     config: Arc<Mutex<AccountsConfig>>,
     auth_manager: Arc<Mutex<auth::AuthManager>>,
+    grants: GrantStore,
+    stale: StaleTokens,
 ) {
     let mut code = None;
     let mut state = None;
@@ -221,10 +269,14 @@ async fn complete_from_query(
     };
 
     if existing_account.is_some() {
-        let mut config = config.lock().await;
-        if let Err(err) = config.save_account(&account) {
-            tracing::error!("Failed to persist refreshed account: {err}");
+        {
+            let mut config = config.lock().await;
+            if let Err(err) = config.save_account(&account) {
+                tracing::error!("Failed to persist refreshed account: {err}");
+            }
         }
+        // Credentials are fresh again; drop any stale-token marker.
+        stale.lock().await.remove(&account.id);
         let path = manager::account_object_path(&account.id);
         manager::succeed_request(connection, &request_id, &state, path).await;
         return;
@@ -245,11 +297,33 @@ async fn complete_from_query(
         .object_server()
         .at(
             path.clone(),
-            AccountInterface::new(account.id, config.clone(), auth_manager.clone()),
+            AccountInterface::new(
+                account.id,
+                config.clone(),
+                auth_manager.clone(),
+                grants.clone(),
+            ),
         )
         .await
     {
         tracing::error!("Failed to register account object: {err}");
+    }
+
+    if let Err(err) = connection
+        .object_server()
+        .at(
+            path.clone(),
+            CredentialsInterface::new(
+                account.id,
+                config.clone(),
+                auth_manager.clone(),
+                grants.clone(),
+                stale.clone(),
+            ),
+        )
+        .await
+    {
+        tracing::error!("Failed to register credentials object: {err}");
     }
 
     for service in ServiceFactory::create_services(&account) {

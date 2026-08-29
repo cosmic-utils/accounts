@@ -1,0 +1,21 @@
+[package]
+name = "accounts_consent_helper"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Out-of-process consent prompt for the Accounts for COSMIC credentials daemon."
+repository = "https://github.com/cosmic-utils/accounts"
+
+[[bin]]
+name = "accounts-consent-helper"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+zbus = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+features = ["a11y", "tokio", "winit", "wayland", "wgpu"]

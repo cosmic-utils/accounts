@@ -32,6 +32,7 @@ url = { workspace = true }
 uuid = { workspace = true }
 zbus = { workspace = true }
 zbus_polkit = { version = "5.0.0", default-features = false, features = ["tokio"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [dependencies.i18n-embed]
 version = "0.15"
