@@ -1,0 +1,23 @@
+[package]
+name = "accounts_example_handler"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Reference dev.edfloreshz.Accounts.ProviderHandler implementation (fake device-code flow) used to exercise the daemon's handler auth path."
+repository = "https://github.com/cosmic-utils/accounts"
+
+[lib]
+name = "accounts_example_handler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "accounts-example-handler"
+path = "src/main.rs"
+
+[dependencies]
+accounts_core = { path = "../core" }
+base64 = "0.22"
+tokio = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zbus = { workspace = true }

@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/ui",
     "crates/consent-helper",
+    "crates/example-handler",
 ]
 
 [workspace.dependencies]

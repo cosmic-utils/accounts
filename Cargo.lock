@@ -132,11 +132,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "accounts_example_handler"
+version = "0.1.0"
+dependencies = [
+ "accounts_core",
+ "base64 0.22.1",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "accounts_ui"
 version = "0.1.0"
 dependencies = [
  "accounts_core",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "cosmic-config",
  "futures-util",

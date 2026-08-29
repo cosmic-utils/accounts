@@ -209,6 +209,12 @@ pub trait Mail {
 /// flow isn't a stock OAuth2 one the daemon already knows how to drive. This is
 /// the entire extension point for non-standard auth — deliberately one method
 /// wide; never add a second.
+/// Reserved `params` key the daemon uses to pass an existing credential blob
+/// (base64) back into `Authenticate` when refreshing a handler-based account —
+/// the handler's "own later invocation" per the spec, keeping the interface one
+/// method wide.
+pub const HANDLER_BLOB_PARAM: &str = "dev.edfloreshz.Accounts.credential_blob";
+
 #[proxy(interface = "dev.edfloreshz.Accounts.ProviderHandler")]
 pub trait ProviderHandler {
     /// Drives whatever custom flow is needed and returns an opaque credential

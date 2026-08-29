@@ -1,4 +1,7 @@
-use accounts_core::{config::AccountsConfig, models::Credential, registry::ProviderRegistry};
+use accounts_core::{
+    config::AccountsConfig, models::Credential, proxy::HANDLER_BLOB_PARAM,
+    registry::ProviderRegistry,
+};
 use base64::Engine;
 use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
@@ -11,10 +14,6 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::daemon::{error::*, storage::CredentialStorage};
-
-/// Reserved key under which the daemon passes an existing handler credential
-/// blob (base64) back into `ProviderHandler.Authenticate` on a refresh.
-pub const HANDLER_BLOB_PARAM: &str = "dev.edfloreshz.Accounts.credential_blob";
 
 /// A `Credential` wrapping an opaque `ProviderHandler` blob.
 fn handler_credential(blob: Vec<u8>) -> Credential {

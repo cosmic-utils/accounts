@@ -113,6 +113,12 @@ run-daemon:
 run-ui:
     RUST_LOG=debug cargo run -p accounts_ui
 
+# Run the reference ProviderHandler (fake device-code flow) on the session bus.
+# Point a provider manifest's [handler] at
+# dev.edfloreshz.Accounts.ProviderHandler.Example /dev/edfloreshz/Accounts/ProviderHandler.
+run-example-handler:
+    RUST_LOG=debug cargo run -p accounts_example_handler
+
 # Run the headless service + the GUI together for a full local test session.
 # Ctrl-C stops the whole stack. Requires a running D-Bus session bus and a
 # secret-service provider (gnome-keyring/kwallet) for credential storage;
