@@ -102,17 +102,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "accounts_consent_helper"
-version = "0.1.0"
-dependencies = [
- "libcosmic",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zbus",
-]
-
-[[package]]
 name = "accounts_core"
 version = "0.1.0"
 dependencies = [

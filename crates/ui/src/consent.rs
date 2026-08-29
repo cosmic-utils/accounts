@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! `dev.edfloreshz.Accounts.ConsentPrompt` — the out-of-process consent dialog
-//! for `Credentials.GetAccessToken`. Kept a genuinely separate process from the
-//! credentials daemon (a security boundary, not just tidiness): the daemon stays
-//! headless and toolkit-agnostic, this is the only part that links a UI toolkit.
+//! `dev.edfloreshz.Accounts.ConsentPrompt` — the consent dialog for
+//! `Credentials.GetAccessToken`.
 //!
-//! It is D-Bus-activated and single-shot: it serves exactly one `Prompt` call,
-//! shows the dialog, returns the user's decision, and exits. The bus re-activates
-//! it for the next prompt.
+//! It runs as a **separate process** from the credentials daemon (a security
+//! boundary: the daemon stays headless and toolkit-agnostic), but it is the same
+//! `accounts_ui` binary re-entered in a third mode, D-Bus-activated via the
+//! `accounts-consent-prompt` wrapper which sets `ACCOUNTS_CONSENT_PROMPT`.
+//!
+//! Single-shot: serves exactly one `Prompt` call, shows the dialog, returns the
+//! decision, and exits. The bus re-activates it for the next prompt.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -80,14 +82,8 @@ impl PromptService {
     }
 }
 
-fn main() -> cosmic::iced::Result {
-    if std::env::var("RUST_LOG").is_err() {
-        unsafe { std::env::set_var("RUST_LOG", "accounts_consent_helper=info") };
-    }
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
+/// Entry point for the `ACCOUNTS_CONSENT_PROMPT` mode of the `accounts_ui` binary.
+pub fn run() -> cosmic::iced::Result {
     let slot: JobSlot = Arc::new(Mutex::new(None));
 
     {
@@ -96,18 +92,18 @@ fn main() -> cosmic::iced::Result {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("consent helper tokio runtime");
+                .expect("consent prompt tokio runtime");
             runtime.block_on(async move {
                 let built = zbus::connection::Builder::session()
                     .and_then(|b| b.name(DBUS_NAME))
                     .and_then(|b| b.serve_at(OBJECT_PATH, PromptService { slot }))
-                    .expect("consent helper bus setup")
+                    .expect("consent prompt bus setup")
                     .build()
                     .await;
                 match built {
                     Ok(_connection) => std::future::pending::<()>().await,
                     Err(e) => {
-                        tracing::error!("consent helper could not own {DBUS_NAME}: {e}");
+                        tracing::error!("consent prompt could not own {DBUS_NAME}: {e}");
                         std::process::exit(1);
                     }
                 }
@@ -131,10 +127,10 @@ fn main() -> cosmic::iced::Result {
     let settings = cosmic::app::Settings::default()
         .size(cosmic::iced::Size::new(460.0, 240.0))
         .resizable(None);
-    cosmic::app::run::<Helper>(settings, job)
+    cosmic::app::run::<Prompt>(settings, job)
 }
 
-struct Helper {
+struct Prompt {
     core: cosmic::Core,
     params: PromptParams,
     reply: Option<oneshot::Sender<bool>>,
@@ -146,7 +142,7 @@ enum Message {
     Deny,
 }
 
-impl cosmic::Application for Helper {
+impl cosmic::Application for Prompt {
     type Executor = cosmic::executor::Default;
     type Flags = Job;
     type Message = Message;
@@ -161,12 +157,12 @@ impl cosmic::Application for Helper {
     }
 
     fn init(core: cosmic::Core, flags: Self::Flags) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        let helper = Helper {
+        let prompt = Prompt {
             core,
             params: flags.params,
             reply: Some(flags.reply),
         };
-        (helper, Task::none())
+        (prompt, Task::none())
     }
 
     fn view(&self) -> Element<'_, Self::Message> {

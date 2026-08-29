@@ -1,0 +1,4 @@
+#!/bin/sh
+# D-Bus activation files can't set environment variables, so this wrapper is
+# the Exec= target: it selects the consent-prompt mode of the shared binary.
+exec env ACCOUNTS_CONSENT_PROMPT=1 accounts_ui "$@"

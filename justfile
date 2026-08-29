@@ -12,13 +12,10 @@ build:
 build-lib:
     cargo build --release --lib
 
-# Build the app (GUI + background D-Bus service, one binary)
+# Build the app. One binary is the GUI, the background D-Bus service, and the
+# consent prompt — selected by ACCOUNTS_HEADLESS / ACCOUNTS_CONSENT_PROMPT.
 build-gui:
     cargo build --release -p accounts_ui
-
-# Build the out-of-process consent prompt helper
-build-consent-helper:
-    cargo build --release -p accounts_consent_helper
 
 # Run all tests
 test:
@@ -46,14 +43,15 @@ clean:
 
 # Install the app system-wide (requires sudo). One binary serves both the GUI
 # and the D-Bus-activated background service (see crates/ui/data/cosmic-accounts.service).
-install-gui: build-gui build-consent-helper
+install-gui: build-gui
     sudo install -Dm0755 target/release/accounts_ui /usr/bin/accounts_ui
-    sudo install -Dm0755 target/release/accounts-consent-helper /usr/bin/accounts-consent-helper
-    # D-Bus activation of dev.edfloreshz.Accounts: activation file + the wrapper
-    # it Exec=s (which sets ACCOUNTS_HEADLESS so the binary runs daemon-only).
+    # D-Bus activation: one activation file + wrapper per mode of the shared
+    # binary (the wrappers set ACCOUNTS_HEADLESS / ACCOUNTS_CONSENT_PROMPT,
+    # which .service files can't).
     sudo install -Dm0755 crates/ui/data/accounts-ui-daemon /usr/bin/accounts-ui-daemon
+    sudo install -Dm0755 crates/ui/data/accounts-consent-prompt /usr/bin/accounts-consent-prompt
     sudo install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.service
-    sudo install -Dm0644 crates/consent-helper/data/dev.edfloreshz.Accounts.ConsentPrompt.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
+    sudo install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.ConsentPrompt.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
     # Optional systemd user unit (for `just start-daemon`), in the systemd path,
     # not the D-Bus one.
     sudo install -Dm0644 crates/ui/data/cosmic-accounts.service /usr/lib/systemd/user/cosmic-accounts.service
@@ -75,8 +73,9 @@ install: build install-gui install-configs
 # Uninstall system files (requires sudo)
 uninstall:
     sudo rm -f /usr/bin/accounts_ui
-    sudo rm -f /usr/bin/accounts-consent-helper
     sudo rm -f /usr/bin/accounts-ui-daemon
+    sudo rm -f /usr/bin/accounts-consent-prompt
+    sudo rm -f /usr/bin/accounts-consent-helper
     sudo rm -f /usr/share/dbus-1/services/dev.edfloreshz.Accounts.service
     sudo rm -f /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
     sudo rm -f /usr/lib/systemd/user/cosmic-accounts.service

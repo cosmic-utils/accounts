@@ -3,6 +3,7 @@
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod app;
+mod consent;
 mod daemon;
 mod i18n;
 
@@ -23,6 +24,10 @@ fn main() -> cosmic::iced::Result {
             .block_on(daemon::run())
             .expect("daemon exited with an error");
         return Ok(());
+    }
+
+    if std::env::var("ACCOUNTS_CONSENT_PROMPT").is_ok() {
+        return consent::run();
     }
 
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
