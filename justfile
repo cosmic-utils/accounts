@@ -47,20 +47,27 @@ clean:
 # Install the app system-wide (requires sudo). One binary serves both the GUI
 # and the D-Bus-activated background service (see crates/ui/data/cosmic-accounts.service).
 install-gui: build-gui build-consent-helper
-    sudo cp target/release/accounts_ui /usr/bin/
-    sudo cp target/release/accounts-consent-helper /usr/bin/
-    sudo cp crates/ui/data/cosmic-accounts.service /usr/share/dbus-1/services/
+    sudo install -Dm0755 target/release/accounts_ui /usr/bin/accounts_ui
+    sudo install -Dm0755 target/release/accounts-consent-helper /usr/bin/accounts-consent-helper
+    # D-Bus activation of dev.edfloreshz.Accounts: activation file + the wrapper
+    # it Exec=s (which sets ACCOUNTS_HEADLESS so the binary runs daemon-only).
+    sudo install -Dm0755 crates/ui/data/accounts-ui-daemon /usr/bin/accounts-ui-daemon
+    sudo install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.service
     sudo install -Dm0644 crates/consent-helper/data/dev.edfloreshz.Accounts.ConsentPrompt.service /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
+    # Optional systemd user unit (for `just start-daemon`), in the systemd path,
+    # not the D-Bus one.
+    sudo install -Dm0644 crates/ui/data/cosmic-accounts.service /usr/lib/systemd/user/cosmic-accounts.service
     sudo install -Dm0644 crates/ui/resources/app.desktop /usr/share/applications/dev.edfloreshz.Accounts.desktop
     sudo install -Dm0644 crates/ui/resources/app.metainfo.xml /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
     sudo install -Dm0644 crates/ui/resources/icons/hicolor/scalable/apps/icon.svg /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
     sudo install -Dm0644 crates/ui/data/dev.edfloreshz.Accounts.policy /usr/share/polkit-1/actions/dev.edfloreshz.Accounts.policy
 
-# Install provider configurations (requires sudo)
+# Install provider configurations (requires sudo). ProviderRegistry reads
+# $XDG_DATA_DIRS/accounts/providers, i.e. /usr/share/accounts/providers.
 install-configs:
-    sudo mkdir -p /etc/accounts/providers
-    sudo cp crates/ui/data/providers/*.toml /etc/accounts/providers/
-    @echo "Remember to update OAuth2 credentials in /etc/accounts/providers/"
+    sudo install -Dm0644 crates/ui/data/providers/google.toml /usr/share/accounts/providers/google.toml
+    sudo install -Dm0644 crates/ui/data/providers/microsoft.toml /usr/share/accounts/providers/microsoft.toml
+    @echo "Remember to set OAuth2 client credentials in /usr/share/accounts/providers/"
 
 # Install everything (requires sudo)
 install: build install-gui install-configs
@@ -69,13 +76,16 @@ install: build install-gui install-configs
 uninstall:
     sudo rm -f /usr/bin/accounts_ui
     sudo rm -f /usr/bin/accounts-consent-helper
-    sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
+    sudo rm -f /usr/bin/accounts-ui-daemon
+    sudo rm -f /usr/share/dbus-1/services/dev.edfloreshz.Accounts.service
     sudo rm -f /usr/share/dbus-1/services/dev.edfloreshz.Accounts.ConsentPrompt.service
+    sudo rm -f /usr/lib/systemd/user/cosmic-accounts.service
+    sudo rm -f /usr/share/dbus-1/services/cosmic-accounts.service
     sudo rm -f /usr/share/applications/dev.edfloreshz.Accounts.desktop
     sudo rm -f /usr/share/metainfo/dev.edfloreshz.Accounts.metainfo.xml
     sudo rm -f /usr/share/icons/hicolor/scalable/apps/dev.edfloreshz.Accounts.svg
     sudo rm -f /usr/share/polkit-1/actions/dev.edfloreshz.Accounts.policy
-    sudo rm -rf /etc/accounts
+    sudo rm -rf /usr/share/accounts /etc/accounts
 
 # Start the background service (user session)
 start-daemon:
