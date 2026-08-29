@@ -40,7 +40,7 @@ impl Decision {
 }
 
 /// Canonicalises a service name from the bus (the spec uses `mail`/`tasks`,
-/// this codebase's `Service` enum still uses `Email`/`Todo`) to the lowercase
+/// this codebase's `Service` enum still uses `Email`/`Tasks`) to the lowercase
 /// spec spelling stored in the grant table. Returns `None` for anything that
 /// isn't a real service.
 pub fn normalize_service(value: &str) -> Option<&'static str> {
