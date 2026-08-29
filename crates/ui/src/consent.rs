@@ -166,10 +166,13 @@ impl cosmic::Application for Prompt {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
+        use cosmic::iced::Length;
+
         let p = &self.params;
-        widget::Column::new()
-            .spacing(16)
-            .padding(24)
+
+        let content = widget::Column::new()
+            .spacing(12)
+            .width(Length::Fill)
             .push(widget::text::title3(format!(
                 "Allow access to \u{201c}{}\u{201d}?",
                 p.account_name
@@ -177,15 +180,26 @@ impl cosmic::Application for Prompt {
             .push(widget::text::body(format!(
                 "{} wants to use this account\u{2019}s {} credentials ({}).",
                 p.caller_name, p.service, p.provider_id
-            )))
+            )));
+
+        // Buttons are pinned outside the scroll area so they are always visible,
+        // however long the caller/account names are.
+        let actions = widget::Row::new()
+            .spacing(8)
+            .width(Length::Fill)
+            .push(widget::space::horizontal())
+            .push(widget::button::standard("Deny").on_press(Message::Deny))
+            .push(widget::button::suggested("Allow").on_press(Message::Allow));
+
+        widget::Column::new()
+            .spacing(16)
+            .padding(24)
             .push(
-                widget::Row::new()
-                    .spacing(8)
-                    .width(cosmic::iced::Length::Fill)
-                    .push(widget::space::horizontal())
-                    .push(widget::button::standard("Deny").on_press(Message::Deny))
-                    .push(widget::button::suggested("Allow").on_press(Message::Allow)),
+                widget::scrollable(content)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
             )
+            .push(actions)
             .into()
     }
 
