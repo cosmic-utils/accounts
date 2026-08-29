@@ -1,9 +1,14 @@
-use crate::daemon::{Error, auth::AuthManager, manager::create_request, services::ServiceFactory};
+use crate::daemon::{
+    Error, auth::AuthManager, error::TokenError, manager::create_request, polkit,
+    services::ServiceFactory,
+};
 use accounts_core::{config::AccountsConfig, models::Service};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use zbus::{fdo::Result, interface, object_server::SignalEmitter, zvariant::OwnedObjectPath};
+use zbus::{
+    fdo::Result, interface, message::Header, object_server::SignalEmitter, zvariant::OwnedObjectPath,
+};
 
 /// Per-account D-Bus object served at `/dev/edfloreshz/Accounts/Accounts/<dbus_id>`.
 ///
@@ -54,7 +59,12 @@ impl AccountInterface {
     }
 
     #[zbus(property)]
-    async fn set_display_name(&self, value: String) -> Result<()> {
+    async fn set_display_name(
+        &self,
+        #[zbus(header)] header: Option<Header<'_>>,
+        value: String,
+    ) -> Result<()> {
+        self.authorize_manage(header.as_ref()).await?;
         let mut account = self.current().await?;
         account.display_name = value;
         let mut config = self.config.lock().await;
@@ -129,21 +139,26 @@ impl AccountInterface {
 
     async fn enable_service(
         &self,
+        #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         service: &str,
     ) -> Result<()> {
+        self.authorize_manage(Some(&header)).await?;
         self.set_service_enabled(&emitter, service, true).await
     }
 
     async fn disable_service(
         &self,
+        #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         service: &str,
     ) -> Result<()> {
+        self.authorize_manage(Some(&header)).await?;
         self.set_service_enabled(&emitter, service, false).await
     }
 
-    async fn remove(&self) -> Result<()> {
+    async fn remove(&self, #[zbus(header)] header: Header<'_>) -> Result<()> {
+        self.authorize_manage(Some(&header)).await?;
         let id = self.id;
 
         {
@@ -194,14 +209,43 @@ impl AccountInterface {
         Ok(())
     }
 
-    async fn get_access_token(&self) -> Result<String> {
-        let account = self.current().await?;
-        let auth_manager = self.auth_manager.lock().await;
+    async fn get_access_token(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> std::result::Result<String, TokenError> {
+        // Layer 1: coarse polkit authorization. The layer-2 grant-table check is
+        // applied on top of this in a later step.
+        if !polkit::check(&header, polkit::ACTION_GET_TOKEN).await {
+            return Err(TokenError::AccessDenied(format!(
+                "polkit denied {}",
+                polkit::ACTION_GET_TOKEN
+            )));
+        }
+
+        let mut account = self
+            .current()
+            .await
+            .map_err(|e| TokenError::Failed(e.to_string()))?;
+
+        if !account.enabled {
+            return Err(TokenError::Disabled(format!(
+                "Account {} is disabled",
+                self.id
+            )));
+        }
+
+        let mut auth_manager = self.auth_manager.lock().await;
+        if let Err(e) = auth_manager.ensure_credentials(&mut account).await {
+            return Err(TokenError::NeedsReauth(format!(
+                "Credentials unavailable, call Reauthenticate: {e}"
+            )));
+        }
+
         auth_manager
             .get_account_credentials(&account.id)
             .await
             .map(|credentials| credentials.access_token)
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+            .map_err(|e| TokenError::NeedsReauth(e.to_string()))
     }
 
     async fn ensure_credentials(&self) -> Result<()> {
@@ -226,6 +270,24 @@ impl AccountInterface {
 }
 
 impl AccountInterface {
+    /// Layer-1 gate for account mutations: `manage-own-accounts` (`auth_self`).
+    /// A missing header (only possible for property writes that arrive without
+    /// one) is treated as an unidentifiable caller and denied.
+    async fn authorize_manage(&self, header: Option<&Header<'_>>) -> Result<()> {
+        let authorized = match header {
+            Some(header) => polkit::check(header, polkit::ACTION_MANAGE_OWN_ACCOUNTS).await,
+            None => false,
+        };
+        if authorized {
+            Ok(())
+        } else {
+            Err(zbus::fdo::Error::AccessDenied(format!(
+                "polkit denied {}",
+                polkit::ACTION_MANAGE_OWN_ACCOUNTS
+            )))
+        }
+    }
+
     async fn set_service_enabled(
         &self,
         emitter: &SignalEmitter<'_>,

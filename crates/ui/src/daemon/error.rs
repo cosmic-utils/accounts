@@ -225,3 +225,24 @@ impl Into<zbus::Error> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// D-Bus error returned by `Account.GetAccessToken`, with the exact names the
+/// protocol spec defines so callers can react programmatically.
+///
+/// - `Disabled` — the account exists but is turned off; re-enable it.
+/// - `NeedsReauth` — credentials are missing or unrefreshable; call
+///   `Account.Reauthenticate`.
+/// - `AccessDenied` — authorization was refused (polkit layer 1, or a layer-2
+///   `deny` grant).
+/// - `ConsentTimeout` — a layer-2 consent prompt was shown and went unanswered.
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "dev.edfloreshz.Accounts.Error")]
+pub enum TokenError {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    Disabled(String),
+    NeedsReauth(String),
+    AccessDenied(String),
+    ConsentTimeout(String),
+    Failed(String),
+}

@@ -2,6 +2,7 @@ pub mod account;
 pub mod auth;
 pub mod error;
 pub mod manager;
+pub mod polkit;
 pub mod provider;
 pub mod request;
 pub mod services;

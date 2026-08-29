@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+
+  <vendor>Accounts for COSMIC</vendor>
+  <vendor_url>https://github.com/cosmic-utils/accounts</vendor_url>
+
+  <action id="dev.edfloreshz.Accounts.manage-own-accounts">
+    <description>Manage online accounts</description>
+    <message>Authentication is required to add, remove, or change an online account</message>
+    <defaults>
+      <allow_any>auth_self</allow_any>
+      <allow_inactive>auth_self</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+
+  <action id="dev.edfloreshz.Accounts.get-token">
+    <description>Retrieve an access token for an online account</description>
+    <message>An application is requesting an access token for one of your online accounts</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <action id="dev.edfloreshz.Accounts.register-provider">
+    <description>Register a system-wide account provider</description>
+    <message>Authentication is required to register a system-wide account provider</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+</policyconfig>
