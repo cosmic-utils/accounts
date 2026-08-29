@@ -179,6 +179,22 @@ impl AccountsClient {
         proxy.ensure_credentials().await.map(|_| ())
     }
 
+    /// Standing consent grants for this account: `(service, caller_identity, decision)`.
+    pub async fn list_grants(&self, id: &Uuid) -> Result<Vec<(String, String, String)>> {
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.list_grants().await
+    }
+
+    pub async fn revoke_grant(
+        &mut self,
+        id: &Uuid,
+        service: &str,
+        caller_identity: &str,
+    ) -> Result<()> {
+        let proxy = self.account_proxy(Self::account_path(id)).await?;
+        proxy.revoke_grant(service, caller_identity).await
+    }
+
     /// `(access_token, expires_at)` for one service, subject to polkit and the
     /// per-(account, service, caller) consent grant. Served by the `Credentials`
     /// interface on the account's own object path.

@@ -87,6 +87,7 @@ impl AppModel {
             self.account_header(account),
             self.account_section(account),
             self.services_section(account),
+            self.grants_section(),
             self.details_section(account),
         ];
 
@@ -163,6 +164,45 @@ impl AppModel {
                     .toggler(*enabled, move |enabled| {
                         Message::SetServiceEnabled(service.clone(), enabled)
                     }),
+            );
+        }
+
+        section.into()
+    }
+
+    fn grants_section(&self) -> Element<'_, Message> {
+        let mut section = widget::settings::section().header(
+            widget::Column::new()
+                .push(widget::text::heading(fl!("app-access")))
+                .push(
+                    widget::text::caption(fl!("app-access-description"))
+                        .class(cosmic::style::Text::Default),
+                )
+                .spacing(spacing().space_xxxs),
+        );
+
+        if self.grants.is_empty() {
+            return section
+                .add(widget::text::body(fl!("no-app-access")).class(cosmic::style::Text::Default))
+                .into();
+        }
+
+        for (service, caller_identity, decision) in &self.grants {
+            let label = caller_label(caller_identity);
+            let summary = if decision == "deny" {
+                fl!("grant-blocked", service = service.as_str())
+            } else {
+                fl!("grant-allowed", service = service.as_str())
+            };
+            let (service, caller) = (service.clone(), caller_identity.clone());
+
+            section = section.add(
+                widget::settings::item::builder(label)
+                    .description(summary)
+                    .control(
+                        widget::button::text(fl!("revoke-access"))
+                            .on_press(Message::RevokeGrant(service, caller)),
+                    ),
             );
         }
 
@@ -334,6 +374,21 @@ fn service_details(service: &Service) -> (String, String, &'static str) {
             fl!("service-tasks-description"),
             "checkbox-checked-symbolic",
         ),
+    }
+}
+
+/// Turns a stored `caller_identity` — a sandbox app id or an absolute exe path —
+/// into something short to show the user.
+pub(super) fn caller_label(caller_identity: &str) -> String {
+    if caller_identity.starts_with('/') {
+        caller_identity
+            .rsplit('/')
+            .next()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(caller_identity)
+            .to_string()
+    } else {
+        caller_identity.to_string()
     }
 }
 

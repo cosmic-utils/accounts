@@ -3,6 +3,8 @@
 mod dialog;
 mod view;
 
+use view::caller_label;
+
 use crate::fl;
 use accounts_core::models::{Account, DbusProviderInfo, Service};
 use accounts_core::{AccountsClient, Uuid, zbus};
@@ -35,6 +37,8 @@ pub struct AppModel {
     providers: Vec<DbusProviderInfo>,
     icon_cache: HashMap<String, widget::icon::Handle>,
     selected_account: Option<Account>,
+    /// Consent grants for `selected_account`: `(service, caller_identity, decision)`.
+    grants: Vec<(String, String, String)>,
     /// The sign-in attempt currently waiting on the user's browser, if any.
     pending_auth: Option<PendingAuth>,
 }
@@ -70,6 +74,10 @@ pub enum Message {
     SelectAccount(Account),
     SetAccountEnabled(bool),
     SetServiceEnabled(Service, bool),
+    LoadGrants,
+    SetGrants(Vec<(String, String, String)>),
+    RevokeGrant(String, String),
+    GrantRevoked(String),
     RemoveAccount(Uuid),
     AccountRemoved(Uuid, String),
 
@@ -118,6 +126,7 @@ impl cosmic::Application for AppModel {
             providers: Vec::new(),
             icon_cache: HashMap::new(),
             selected_account: None,
+            grants: Vec::new(),
             pending_auth: None,
         };
 
@@ -427,7 +436,61 @@ impl cosmic::Application for AppModel {
                     .insert(url, widget::icon::from_raster_bytes(bytes));
                 self.rebuild_nav();
             }
-            Message::SelectAccount(account) => self.selected_account = Some(account),
+            Message::SelectAccount(account) => {
+                let changed = self.selected_account.as_ref().map(|a| a.id) != Some(account.id);
+                self.selected_account = Some(account);
+                if changed {
+                    self.grants.clear();
+                }
+                tasks.push(self.update(Message::LoadGrants));
+            }
+            Message::LoadGrants => {
+                if let (Some(client), Some(account)) =
+                    (self.client.clone(), self.selected_account.clone())
+                {
+                    tasks.push(Task::perform(
+                        async move { client.list_grants(&account.id).await },
+                        |result| match result {
+                            Ok(grants) => cosmic::action::app(Message::SetGrants(grants)),
+                            Err(err) => {
+                                tracing::error!("Failed to list grants: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::SetGrants(grants) => {
+                self.grants = grants;
+            }
+            Message::RevokeGrant(service, caller_identity) => {
+                if let (Some(mut client), Some(account)) =
+                    (self.client.clone(), self.selected_account.clone())
+                {
+                    let app = caller_label(&caller_identity);
+                    tasks.push(Task::perform(
+                        async move {
+                            client
+                                .revoke_grant(&account.id, &service, &caller_identity)
+                                .await
+                        },
+                        move |result: Result<(), zbus::fdo::Error>| match result {
+                            Ok(()) => cosmic::action::app(Message::GrantRevoked(app.clone())),
+                            Err(err) => {
+                                tracing::error!("Failed to revoke grant: {err}");
+                                cosmic::action::none()
+                            }
+                        },
+                    ));
+                }
+            }
+            Message::GrantRevoked(app) => {
+                tasks.push(self.update(Message::ShowToast(fl!(
+                    "access-revoked",
+                    app = app.as_str()
+                ))));
+                tasks.push(self.update(Message::LoadGrants));
+            }
             Message::SetAccountEnabled(enabled) => {
                 if let (Some(mut client), Some(account)) =
                     (self.client.clone(), self.selected_account.clone())
