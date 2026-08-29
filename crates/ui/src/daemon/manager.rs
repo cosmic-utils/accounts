@@ -140,16 +140,109 @@ pub(crate) async fn create_request(
         )
         .await?;
 
-    tokio::spawn(run_oauth_flow(
-        provider_id,
-        existing_account,
-        request_id,
-        state,
-        auth_manager,
+    let uses_handler = crate::daemon::REGISTRY
+        .get()
+        .and_then(|registry| registry.get(&provider_id))
+        .is_some_and(|manifest| manifest.handler.is_some());
+
+    if uses_handler {
+        tokio::spawn(run_handler_flow(
+            provider_id,
+            existing_account,
+            request_id,
+            state,
+            auth_manager,
+            connection.clone(),
+        ));
+    } else {
+        tokio::spawn(run_oauth_flow(
+            provider_id,
+            existing_account,
+            request_id,
+            state,
+            auth_manager,
+            connection.clone(),
+        ));
+    }
+
+    Ok(path)
+}
+
+/// Drives a `[handler]` provider's `Request`: the external `ProviderHandler`
+/// owns whatever interaction is needed, so the daemon just makes the one D-Bus
+/// call and finalizes on the result.
+async fn run_handler_flow(
+    provider_id: String,
+    existing_account: Option<Uuid>,
+    request_id: String,
+    state: Arc<Mutex<RequestState>>,
+    auth_manager: Arc<Mutex<AuthManager>>,
+    connection: Connection,
+) {
+    tokio::spawn(terminal_timeout(
+        request_id.clone(),
+        state.clone(),
         connection.clone(),
     ));
 
-    Ok(path)
+    let completed = auth_manager
+        .lock()
+        .await
+        .authenticate_via_handler(provider_id, request_id.clone(), existing_account)
+        .await;
+
+    let completed = match completed {
+        Ok(completed) => completed,
+        Err(err) => {
+            fail_request(&connection, &request_id, &state, err.to_string()).await;
+            return;
+        }
+    };
+
+    let (Some(config), Some(grants), Some(stale)) = (
+        crate::daemon::CONFIG.get(),
+        crate::daemon::GRANTS.get(),
+        crate::daemon::STALE.get(),
+    ) else {
+        fail_request(
+            &connection,
+            &request_id,
+            &state,
+            "daemon not fully initialised".to_string(),
+        )
+        .await;
+        return;
+    };
+
+    crate::daemon::finalize_completed_auth(
+        &connection,
+        config,
+        &auth_manager,
+        grants,
+        stale,
+        completed,
+    )
+    .await;
+}
+
+/// Fails a still-pending `Request` after `REQUEST_TIMEOUT`. Unlike
+/// `request_timeout` there is no CSRF/`pending_auth` entry to discard.
+async fn terminal_timeout(
+    request_id: String,
+    state: Arc<Mutex<RequestState>>,
+    connection: Connection,
+) {
+    tokio::time::sleep(REQUEST_TIMEOUT).await;
+    if state.lock().await.status.is_terminal() {
+        return;
+    }
+    fail_request(
+        &connection,
+        &request_id,
+        &state,
+        "The sign-in attempt timed out".to_string(),
+    )
+    .await;
 }
 
 async fn run_oauth_flow(

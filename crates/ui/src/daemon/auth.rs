@@ -158,6 +158,7 @@ impl AuthManager {
             expires_at,
             scope: manifest.oauth.scopes.clone(),
             token_type: "Bearer".to_string(),
+            credential_blob: None,
         };
 
         let account = if let Some(existing_id) = pending.existing_account {
@@ -198,6 +199,93 @@ impl AuthManager {
         Ok(CompletedAuth {
             request_id: pending.request_id,
             existing_account: pending.existing_account,
+            account,
+        })
+    }
+
+    /// Auth path for providers that declare a `[handler]`: the daemon can't
+    /// drive their flow itself, so it calls the external
+    /// `dev.edfloreshz.Accounts.ProviderHandler` service, which returns an
+    /// identity and an opaque credential blob the daemon stores verbatim.
+    pub async fn authenticate_via_handler(
+        &mut self,
+        provider_id: String,
+        request_id: String,
+        existing_account: Option<Uuid>,
+    ) -> Result<CompletedAuth> {
+        let registry = Self::registry()?;
+        let manifest = registry
+            .get(&provider_id)
+            .ok_or_else(|| Error::InvalidProvider(provider_id.clone()))?;
+        let handler = manifest
+            .handler
+            .as_ref()
+            .ok_or_else(|| Error::AuthenticationFailed {
+                reason: format!("provider {provider_id} has no [handler] section"),
+            })?;
+
+        let connection = zbus::Connection::session().await?;
+        let proxy = accounts_core::proxy::ProviderHandlerProxy::builder(&connection)
+            .destination(handler.bus_name.clone())
+            .map_err(Error::DBus)?
+            .path(handler.object_path.clone())
+            .map_err(Error::DBus)?
+            .build()
+            .await
+            .map_err(Error::DBus)?;
+
+        // TODO: forward Manager.CreateAccount's params once they are plumbed through.
+        let (identity, blob) =
+            proxy
+                .authenticate(HashMap::new())
+                .await
+                .map_err(|e| Error::AuthenticationFailed {
+                    reason: format!("provider handler {} failed: {e}", handler.bus_name),
+                })?;
+
+        let credentials = Credential {
+            access_token: String::new(),
+            refresh_token: None,
+            expires_at: None,
+            scope: Vec::new(),
+            token_type: "handler".to_string(),
+            credential_blob: Some(blob),
+        };
+
+        let account = if let Some(existing_id) = existing_account {
+            let mut account = AccountsConfig::config()
+                .get_account(&existing_id)
+                .ok_or_else(|| Error::AccountNotFound(existing_id.to_string()))?;
+            account.last_used = Some(Utc::now());
+            self.storage
+                .set_account_credentials(&account.id, &credentials)
+                .await?;
+            account
+        } else {
+            if AccountsConfig::config().account_exists(&identity, &provider_id) {
+                return Err(Error::AccountAlreadyExists);
+            }
+            let email = identity.contains('@').then(|| identity.clone());
+            let account = accounts_core::models::Account {
+                id: Uuid::new_v4(),
+                provider: provider_id,
+                display_name: identity.clone(),
+                username: identity,
+                email,
+                enabled: true,
+                created_at: Utc::now(),
+                last_used: Some(Utc::now()),
+                services: manifest.default_services(),
+            };
+            self.storage
+                .set_account_credentials(&account.id, &credentials)
+                .await?;
+            account
+        };
+
+        Ok(CompletedAuth {
+            request_id,
+            existing_account,
             account,
         })
     }

@@ -37,6 +37,11 @@ type StaleTokens = Arc<Mutex<HashSet<Uuid>>>;
 
 pub static CONNECTION: OnceCell<Connection> = OnceCell::const_new();
 pub static REGISTRY: OnceCell<ProviderRegistry> = OnceCell::const_new();
+/// Daemon-wide handles, set once at startup, for code paths (the handler auth
+/// flow) that finalize an account outside the HTTP callback that carries them.
+pub static CONFIG: OnceCell<Arc<Mutex<AccountsConfig>>> = OnceCell::const_new();
+pub static GRANTS: OnceCell<GrantStore> = OnceCell::const_new();
+pub static STALE: OnceCell<StaleTokens> = OnceCell::const_new();
 /// Live `Request` objects keyed by id, so the OAuth callback handler can locate the one
 /// that corresponds to a given CSRF token/`state` and drive it to a terminal status.
 pub static REQUESTS: OnceCell<Arc<Mutex<HashMap<String, SharedRequestState>>>> =
@@ -73,6 +78,10 @@ pub async fn run() -> Result<()> {
         .await
         .map_err(|e| zbus::Error::Failure(e.to_string()))?;
     let stale: StaleTokens = Arc::new(Mutex::new(HashSet::new()));
+
+    let _ = CONFIG.set(config.clone());
+    let _ = GRANTS.set(grants.clone());
+    let _ = STALE.set(stale.clone());
 
     let manager_iface = ManagerInterface::new(config.clone(), auth_manager.clone());
 
@@ -252,6 +261,34 @@ async fn complete_from_query(
             tracing::error!("Failed to authenticate user: {err}");
             return;
         }
+    };
+
+    finalize_completed_auth(
+        connection,
+        &config,
+        &auth_manager,
+        &grants,
+        &stale,
+        completed,
+    )
+    .await;
+}
+
+/// Persists a freshly authenticated (or reauthenticated) account, registers its
+/// `Account` + `Credentials` objects and `Endpoint.*` interfaces, emits
+/// `AccountAdded`, and drives its `Request` to `succeeded`. Shared by the OAuth
+/// HTTP callback and the `ProviderHandler` flow.
+pub(crate) async fn finalize_completed_auth(
+    connection: &Connection,
+    config: &Arc<Mutex<AccountsConfig>>,
+    auth_manager: &Arc<Mutex<auth::AuthManager>>,
+    grants: &GrantStore,
+    stale: &StaleTokens,
+    completed: auth::CompletedAuth,
+) {
+    let Some(requests) = REQUESTS.get() else {
+        tracing::error!("Request registry not available");
+        return;
     };
 
     let auth::CompletedAuth {

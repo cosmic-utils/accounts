@@ -156,6 +156,17 @@ impl CredentialsInterface {
         // Both gates passed: hand back a fresh token.
         let force_refresh = self.stale.lock().await.remove(&self.id);
         let mut auth_manager = self.auth_manager.lock().await;
+
+        // Handler-based accounts store an opaque blob, not an OAuth2 token; the
+        // daemon can't refresh it, so hand it back verbatim.
+        if let Ok(credential) = auth_manager.get_account_credentials(&self.id).await
+            && credential.token_type == "handler"
+        {
+            let blob = credential.credential_blob.unwrap_or_default();
+            let expires_at = credential.expires_at.map(|at| at.timestamp()).unwrap_or(0);
+            return Ok((String::from_utf8_lossy(&blob).into_owned(), expires_at));
+        }
+
         let refresh = if force_refresh {
             auth_manager.refresh_token(&account).await
         } else {
