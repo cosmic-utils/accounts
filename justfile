@@ -20,10 +20,6 @@ build-gui:
 build-consent-helper:
     cargo build --release -p accounts_consent_helper
 
-# Build the provider processes
-build-providers:
-    cargo build --release -p accounts_provider_google -p accounts_provider_microsoft
-
 # Run all tests
 test:
     cargo test --lib
@@ -107,27 +103,6 @@ cli-list:
 cli-help:
     cargo run --example cli -- --help
 
-# Run the Google provider process in the foreground with debug logging.
-# Registers dev.edfloreshz.Accounts.Provider.Google on the session bus.
-run-google:
-    RUST_LOG=debug cargo run -p accounts_provider_google
-
-# Run the Microsoft provider process in the foreground with debug logging.
-# Registers dev.edfloreshz.Accounts.Provider.Microsoft on the session bus.
-run-microsoft:
-    RUST_LOG=debug cargo run -p accounts_provider_microsoft
-
-# Run both provider processes in the foreground (Ctrl-C stops both).
-# Uses the manifests in crates/ui/data/providers/, which ProviderRegistry
-# reads as a dev-mode fallback without needing anything installed.
-run-providers:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    trap 'kill 0' EXIT
-    RUST_LOG=debug cargo run -p accounts_provider_google &
-    RUST_LOG=debug cargo run -p accounts_provider_microsoft &
-    wait
-
 # Run the background D-Bus service in the foreground with debug logging,
 # without opening a window. Run from the repo root so it picks up
 # crates/ui/data/providers/*.toml.
@@ -138,19 +113,15 @@ run-daemon:
 run-ui:
     RUST_LOG=debug cargo run -p accounts_ui
 
-# Run providers + the headless service + the GUI together for a full local
-# test session. Ctrl-C stops the whole stack. Requires a running D-Bus session
-# bus and secret-service provider (gnome-keyring/kwallet) for credential
-# storage; OAuth flows additionally need real client credentials in
+# Run the headless service + the GUI together for a full local test session.
+# Ctrl-C stops the whole stack. Requires a running D-Bus session bus and a
+# secret-service provider (gnome-keyring/kwallet) for credential storage;
+# OAuth flows additionally need real client credentials in
 # crates/ui/data/providers/*.toml.
 run-stack:
     #!/usr/bin/env bash
     set -euo pipefail
     trap 'kill 0' EXIT
-    echo "Starting providers..."
-    RUST_LOG=debug cargo run -p accounts_provider_google &
-    RUST_LOG=debug cargo run -p accounts_provider_microsoft &
-    sleep 1
     echo "Starting background service..."
     ACCOUNTS_HEADLESS=1 RUST_LOG=debug cargo run -p accounts_ui &
     sleep 1

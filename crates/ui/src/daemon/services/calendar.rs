@@ -1,20 +1,18 @@
-use std::collections::HashMap;
-
 use accounts_core::{
-    AccountService, ServiceConfig,
+    AccountService,
     models::{Account, Service},
-    proxy::Provider1Proxy,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use zbus::{
-    Connection,
     fdo::{Error, Result},
     interface,
 };
 
 use crate::daemon::CONNECTION;
-use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
+use crate::daemon::services::{
+    account_identity, endpoint_object_path, provider_manifest, refresh_account_credentials,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CalendarService {
@@ -25,23 +23,6 @@ impl CalendarService {
     pub fn new(account: Account) -> Self {
         Self { account }
     }
-
-    async fn fetch_config(&self) -> Result<HashMap<String, String>> {
-        let registry = crate::daemon::REGISTRY
-            .get()
-            .ok_or_else(|| Error::Failed("Provider registry not loaded".to_string()))?;
-        let manifest = registry
-            .get(&self.account.provider)
-            .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", self.account.provider)))?;
-
-        let connection = Connection::session().await?;
-        let proxy = Provider1Proxy::new(&connection, manifest.provider.dbus_name.clone()).await?;
-
-        proxy
-            .get_service_config("calendar")
-            .await
-            .map_err(|e| Error::Failed(format!("Provider did not return calendar config: {e}")))
-    }
 }
 
 #[interface(name = "dev.edfloreshz.Accounts.Endpoint.Calendar")]
@@ -50,11 +31,14 @@ impl CalendarService {
     /// calendars underneath via a normal CalDAV PROPFIND.
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
-        let config = self.fetch_config().await?;
-        config
-            .get("uri")
-            .cloned()
-            .ok_or_else(|| Error::Failed("Provider did not return a calendar uri".to_string()))
+        let manifest = provider_manifest(&self.account)?;
+        let endpoint = manifest.endpoint.calendar.as_ref().ok_or_else(|| {
+            Error::Failed(format!(
+                "Provider {} has no calendar endpoint",
+                self.account.provider
+            ))
+        })?;
+        Ok(endpoint.resolve(&account_identity(&self.account)))
     }
 
     /// Mirrors `Credentials.AuthMethod`.
@@ -76,20 +60,6 @@ impl AccountService for CalendarService {
 
     fn is_supported(&self, account: &Account) -> bool {
         account.services.contains_key(&Service::Calendar)
-    }
-
-    async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
-        let config = self.fetch_config().await?;
-        let mut settings = HashMap::new();
-        for (key, value) in config {
-            settings.insert(key, value.into());
-        }
-
-        Ok(ServiceConfig {
-            service_type: "Calendar".to_string(),
-            provider_type: account.provider.clone(),
-            settings,
-        })
     }
 
     async fn add_service(&self) -> Result<bool> {

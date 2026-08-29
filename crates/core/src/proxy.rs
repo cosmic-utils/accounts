@@ -204,12 +204,17 @@ pub trait Mail {
     fn auth_method(&self) -> Result<String>;
 }
 
-#[proxy(
-    default_path = "/dev/edfloreshz/Accounts/Provider",
-    interface = "dev.edfloreshz.Accounts.Provider1"
-)]
-pub trait Provider1 {
-    async fn get_user_info(&self, access_token: &str) -> Result<HashMap<String, String>>;
-
-    async fn get_service_config(&self, service: &str) -> Result<HashMap<String, String>>;
+/// Implemented by a third-party service, not by the accounts daemon. Referenced
+/// from a `.provider` manifest's `[handler]` section for providers whose auth
+/// flow isn't a stock OAuth2 one the daemon already knows how to drive. This is
+/// the entire extension point for non-standard auth — deliberately one method
+/// wide; never add a second.
+#[proxy(interface = "dev.edfloreshz.Accounts.ProviderHandler")]
+pub trait ProviderHandler {
+    /// Drives whatever custom flow is needed and returns an opaque credential
+    /// blob the daemon stores and later uses to mint access tokens. `params` is
+    /// whatever `Manager.CreateAccount` was given, passed through. (`a{sv}` in
+    /// the spec; kept as `a{ss}` here to match this codebase's existing param
+    /// simplification.)
+    async fn authenticate(&self, params: HashMap<String, String>) -> Result<(String, Vec<u8>)>;
 }

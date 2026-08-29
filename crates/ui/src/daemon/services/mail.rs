@@ -1,23 +1,19 @@
-use std::collections::HashMap;
-
 use accounts_core::{
-    AccountService, ServiceConfig,
+    AccountService,
     models::{Account, Service},
-    proxy::Provider1Proxy,
+    registry::MailEndpointManifest,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use zbus::{
-    Connection,
     fdo::{Error, Result},
     interface,
 };
 
 use crate::daemon::CONNECTION;
-use crate::daemon::services::{endpoint_object_path, refresh_account_credentials};
-
-const DEFAULT_IMAP_PORT: u16 = 993;
-const DEFAULT_SMTP_PORT: u16 = 587;
+use crate::daemon::services::{
+    endpoint_object_path, provider_manifest, refresh_account_credentials,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MailService {
@@ -29,35 +25,17 @@ impl MailService {
         Self { account }
     }
 
-    async fn fetch_config(&self) -> Result<HashMap<String, String>> {
-        let registry = crate::daemon::REGISTRY
-            .get()
-            .ok_or_else(|| Error::Failed("Provider registry not loaded".to_string()))?;
-        let manifest = registry
-            .get(&self.account.provider)
-            .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", self.account.provider)))?;
-
-        let connection = Connection::session().await?;
-        let proxy = Provider1Proxy::new(&connection, manifest.provider.dbus_name.clone()).await?;
-
-        proxy
-            .get_service_config("email")
-            .await
-            .map_err(|e| Error::Failed(format!("Provider did not return email config: {e}")))
-    }
-
-    fn string_setting(config: &HashMap<String, String>, key: &str) -> Result<String> {
-        config
-            .get(key)
-            .cloned()
-            .ok_or_else(|| Error::Failed(format!("Provider did not return {key}")))
-    }
-
-    fn port_setting(config: &HashMap<String, String>, key: &str, default: u16) -> u16 {
-        config
-            .get(key)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
+    fn endpoint(&self) -> Result<&'static MailEndpointManifest> {
+        provider_manifest(&self.account)?
+            .endpoint
+            .mail
+            .as_ref()
+            .ok_or_else(|| {
+                Error::Failed(format!(
+                    "Provider {} has no mail endpoint",
+                    self.account.provider
+                ))
+            })
     }
 }
 
@@ -65,30 +43,22 @@ impl MailService {
 impl MailService {
     #[zbus(property)]
     async fn imap_host(&self) -> Result<String> {
-        Self::string_setting(&self.fetch_config().await?, "imap_host")
+        Ok(self.endpoint()?.imap_host.clone())
     }
 
     #[zbus(property)]
     async fn imap_port(&self) -> Result<u16> {
-        Ok(Self::port_setting(
-            &self.fetch_config().await?,
-            "imap_port",
-            DEFAULT_IMAP_PORT,
-        ))
+        Ok(self.endpoint()?.imap_port)
     }
 
     #[zbus(property)]
     async fn smtp_host(&self) -> Result<String> {
-        Self::string_setting(&self.fetch_config().await?, "smtp_host")
+        Ok(self.endpoint()?.smtp_host.clone())
     }
 
     #[zbus(property)]
     async fn smtp_port(&self) -> Result<u16> {
-        Ok(Self::port_setting(
-            &self.fetch_config().await?,
-            "smtp_port",
-            DEFAULT_SMTP_PORT,
-        ))
+        Ok(self.endpoint()?.smtp_port)
     }
 
     /// Mirrors `Credentials.AuthMethod`.
@@ -110,20 +80,6 @@ impl AccountService for MailService {
 
     fn is_supported(&self, account: &Account) -> bool {
         account.services.contains_key(&Service::Email)
-    }
-
-    async fn get_config(&self, account: &Account) -> Result<ServiceConfig> {
-        let config = self.fetch_config().await?;
-        let mut settings = HashMap::new();
-        for (key, value) in config {
-            settings.insert(key, value.into());
-        }
-
-        Ok(ServiceConfig {
-            service_type: "Mail".to_string(),
-            provider_type: account.provider.clone(),
-            settings,
-        })
     }
 
     async fn add_service(&self) -> Result<bool> {

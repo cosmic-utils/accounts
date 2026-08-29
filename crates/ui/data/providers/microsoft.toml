@@ -1,8 +1,6 @@
 [provider]
 id = "microsoft"
 name = "Microsoft"
-dbus_name = "dev.edfloreshz.Accounts.Provider.Microsoft"
-exec = "/usr/bin/accounts_provider_microsoft"
 services = ["Email", "Calendar", "Contacts", "Todo"]
 icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/crates/ui/resources/img/microsoft.png"
 
@@ -27,3 +25,24 @@ scopes = [
 ]
 
 [oauth.extra_params]
+
+[userinfo]
+url = "https://graph.microsoft.com/v1.0/me"
+display_name_field = "displayName"
+email_field = "mail"
+username_field = "userPrincipalName"
+
+[endpoint.calendar]
+uri_template = "https://outlook.office365.com/"
+
+[endpoint.contacts]
+uri_template = "https://outlook.office365.com/"
+
+[endpoint.tasks]
+uri_template = "https://graph.microsoft.com/v1.0/me/todo"
+
+[endpoint.mail]
+imap_host = "outlook.office365.com"
+imap_port = 993
+smtp_host = "smtp.office365.com"
+smtp_port = 587

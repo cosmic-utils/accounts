@@ -1,6 +1,4 @@
-use accounts_core::{
-    config::AccountsConfig, models::Credential, proxy::Provider1Proxy, registry::ProviderRegistry,
-};
+use accounts_core::{config::AccountsConfig, models::Credential, registry::ProviderRegistry};
 use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
@@ -10,7 +8,6 @@ use oauth2::{
 };
 use std::collections::HashMap;
 use uuid::Uuid;
-use zbus::Connection;
 
 use crate::daemon::{error::*, storage::CredentialStorage};
 
@@ -31,7 +28,6 @@ pub struct CompletedAuth {
 pub struct AuthManager {
     pending_auth: HashMap<String, PendingAuth>,
     storage: CredentialStorage,
-    connection: Connection,
 }
 
 impl AuthManager {
@@ -39,7 +35,6 @@ impl AuthManager {
         Ok(Self {
             pending_auth: HashMap::new(),
             storage: CredentialStorage::new().await?,
-            connection: Connection::session().await?,
         })
     }
 
@@ -70,6 +65,14 @@ impl AuthManager {
         let manifest = registry
             .get(&provider_id)
             .ok_or_else(|| Error::InvalidProvider(provider_id.clone()))?;
+
+        if manifest.handler.is_some() {
+            return Err(Error::AuthenticationFailed {
+                reason: format!(
+                    "provider {provider_id} uses an external ProviderHandler, which is not wired up yet"
+                ),
+            });
+        }
 
         let client = Self::oauth_client(manifest)?;
 
@@ -121,12 +124,12 @@ impl AuthManager {
         csrf_token: String,
         authorization_code: String,
     ) -> Result<CompletedAuth> {
-        let pending = self
-            .pending_auth
-            .remove(&csrf_token)
-            .ok_or_else(|| Error::AuthenticationFailed {
-                reason: "Invalid CSRF token".to_string(),
-            })?;
+        let pending =
+            self.pending_auth
+                .remove(&csrf_token)
+                .ok_or_else(|| Error::AuthenticationFailed {
+                    reason: "Invalid CSRF token".to_string(),
+                })?;
 
         let registry = Self::registry()?;
         let manifest = registry
@@ -199,34 +202,52 @@ impl AuthManager {
         })
     }
 
+    /// Fetches the account identity from the provider's `[userinfo]` endpoint:
+    /// one bearer-authenticated `GET`, then the configured fields are read out
+    /// of the JSON response.
     async fn get_user_info(
         &self,
         manifest: &accounts_core::ProviderManifest,
         access_token: &str,
     ) -> Result<UserInfo> {
-        let proxy = Provider1Proxy::new(&self.connection, manifest.provider.dbus_name.clone())
-            .await
-            .map_err(Error::DBus)?;
+        let userinfo = manifest
+            .userinfo
+            .as_ref()
+            .ok_or_else(|| Error::AuthenticationFailed {
+                reason: format!(
+                    "provider {} has no [userinfo] section in its manifest",
+                    manifest.provider.id
+                ),
+            })?;
 
-        let mut info =
-            proxy
-                .get_user_info(access_token)
-                .await
-                .map_err(|e| Error::AuthenticationFailed {
-                    reason: format!(
-                        "Provider {} failed to return user info: {e}",
-                        manifest.provider.id
-                    ),
-                })?;
+        let body: serde_json::Value = reqwest::Client::new()
+            .get(&userinfo.url)
+            .bearer_auth(access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let field = |name: &str| {
+            body.get(name)
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        };
+
+        let email = field(&userinfo.email_field);
+        let username = userinfo
+            .username_field
+            .as_deref()
+            .and_then(field)
+            .or_else(|| email.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+        let display_name = field(&userinfo.display_name_field).unwrap_or_else(|| username.clone());
 
         Ok(UserInfo {
-            display_name: info
-                .remove("display_name")
-                .unwrap_or_else(|| "Unknown".to_string()),
-            username: info
-                .remove("username")
-                .unwrap_or_else(|| "Unknown".to_string()),
-            email: info.remove("email"),
+            display_name,
+            username,
+            email,
         })
     }
 

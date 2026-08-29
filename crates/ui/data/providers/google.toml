@@ -1,8 +1,6 @@
 [provider]
 id = "google"
 name = "Google"
-dbus_name = "dev.edfloreshz.Accounts.Provider.Google"
-exec = "/usr/bin/accounts_provider_google"
 services = ["Email", "Calendar", "Contacts", "Todo"]
 icon = "https://raw.githubusercontent.com/cosmic-utils/accounts/refs/heads/main/crates/ui/resources/img/google.png"        # remote URL — fetched async, cached
 
@@ -25,3 +23,23 @@ scopes = [
 [oauth.extra_params]
 access_type = "offline"
 prompt = "consent"
+
+[userinfo]
+url = "https://www.googleapis.com/oauth2/v2/userinfo"
+display_name_field = "name"
+email_field = "email"
+
+[endpoint.calendar]
+uri_template = "https://apidata.googleusercontent.com/caldav/v2/"
+
+[endpoint.contacts]
+uri_template = "https://www.googleapis.com/.well-known/carddav"
+
+[endpoint.tasks]
+uri_template = "https://tasks.googleapis.com/tasks/v1/"
+
+[endpoint.mail]
+imap_host = "imap.gmail.com"
+imap_port = 993
+smtp_host = "smtp.gmail.com"
+smtp_port = 587

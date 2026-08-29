@@ -20,6 +20,25 @@ pub(crate) fn endpoint_object_path(account: &Account) -> String {
     format!("/dev/edfloreshz/Accounts/Accounts/{}", account.dbus_id())
 }
 
+/// The account's provider manifest, which now carries the endpoint config
+/// directly (no out-of-process provider RPC).
+pub(crate) fn provider_manifest(
+    account: &Account,
+) -> Result<&'static accounts_core::ProviderManifest> {
+    crate::daemon::REGISTRY
+        .get()
+        .and_then(|registry| registry.get(&account.provider))
+        .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", account.provider)))
+}
+
+/// Identity used to fill `${identity}` in a DAV endpoint's URI template.
+pub(crate) fn account_identity(account: &Account) -> String {
+    account
+        .email
+        .clone()
+        .unwrap_or_else(|| account.username.clone())
+}
+
 /// Refresh the account's stored credentials if they have expired, so the
 /// endpoint's consumer can rely on `Credentials.GetAccessToken` succeeding.
 pub(crate) async fn refresh_account_credentials(account: &mut Account) -> Result<()> {

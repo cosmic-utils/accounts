@@ -24,18 +24,95 @@ pub struct OAuthManifest {
 pub struct ProviderManifestInfo {
     pub id: String,
     pub name: String,
-    pub dbus_name: String,
-    #[serde(default)]
-    pub exec: String,
     pub services: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
+}
+
+/// How the daemon learns the account identity after a successful OAuth2 flow:
+/// one authenticated `GET` against `url`, then pull these fields out of the JSON.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserInfoManifest {
+    pub url: String,
+    #[serde(default = "default_display_name_field")]
+    pub display_name_field: String,
+    #[serde(default = "default_email_field")]
+    pub email_field: String,
+    /// Field to use as the stable username; falls back to `email_field`.
+    #[serde(default)]
+    pub username_field: Option<String>,
+}
+
+fn default_display_name_field() -> String {
+    "name".to_string()
+}
+
+fn default_email_field() -> String {
+    "email".to_string()
+}
+
+/// A CalDAV/CardDAV collection URL. `${identity}` in the template is replaced
+/// with the account's identity (email or username) at resolution time.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DavEndpointManifest {
+    pub uri_template: String,
+}
+
+impl DavEndpointManifest {
+    pub fn resolve(&self, identity: &str) -> String {
+        self.uri_template.replace("${identity}", identity)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MailEndpointManifest {
+    pub imap_host: String,
+    #[serde(default = "default_imap_port")]
+    pub imap_port: u16,
+    pub smtp_host: String,
+    #[serde(default = "default_smtp_port")]
+    pub smtp_port: u16,
+}
+
+fn default_imap_port() -> u16 {
+    993
+}
+
+fn default_smtp_port() -> u16 {
+    587
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EndpointManifest {
+    #[serde(default)]
+    pub calendar: Option<DavEndpointManifest>,
+    #[serde(default)]
+    pub contacts: Option<DavEndpointManifest>,
+    #[serde(default)]
+    pub tasks: Option<DavEndpointManifest>,
+    #[serde(default)]
+    pub mail: Option<MailEndpointManifest>,
+}
+
+/// Present only for providers whose auth flow the daemon can't drive itself
+/// (device-code, custom SSO, client certs). Points at a service implementing
+/// `dev.edfloreshz.Accounts.ProviderHandler`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HandlerManifest {
+    pub bus_name: String,
+    pub object_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderManifest {
     pub provider: ProviderManifestInfo,
     pub oauth: OAuthManifest,
+    #[serde(default)]
+    pub userinfo: Option<UserInfoManifest>,
+    #[serde(default)]
+    pub endpoint: EndpointManifest,
+    #[serde(default)]
+    pub handler: Option<HandlerManifest>,
 }
 
 impl ProviderManifest {

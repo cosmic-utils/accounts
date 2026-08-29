@@ -4,8 +4,6 @@ members = [
     "crates/core",
     "crates/ui",
     "crates/consent-helper",
-    "crates/providers/google",
-    "crates/providers/microsoft",
 ]
 
 [workspace.dependencies]
