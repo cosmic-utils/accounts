@@ -272,7 +272,13 @@ impl AccountInterface {
 
     async fn reauthenticate(&self) -> Result<OwnedObjectPath> {
         let account = self.current().await?;
-        create_request(account.provider, Some(self.id), self.auth_manager.clone()).await
+        create_request(
+            account.provider,
+            Some(self.id),
+            std::collections::HashMap::new(),
+            self.auth_manager.clone(),
+        )
+        .await
     }
 
     #[zbus(signal)]

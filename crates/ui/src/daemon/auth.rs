@@ -1,4 +1,5 @@
 use accounts_core::{config::AccountsConfig, models::Credential, registry::ProviderRegistry};
+use base64::Engine;
 use chrono::{Duration, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
@@ -10,6 +11,22 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::daemon::{error::*, storage::CredentialStorage};
+
+/// Reserved key under which the daemon passes an existing handler credential
+/// blob (base64) back into `ProviderHandler.Authenticate` on a refresh.
+pub const HANDLER_BLOB_PARAM: &str = "dev.edfloreshz.Accounts.credential_blob";
+
+/// A `Credential` wrapping an opaque `ProviderHandler` blob.
+fn handler_credential(blob: Vec<u8>) -> Credential {
+    Credential {
+        access_token: String::new(),
+        refresh_token: None,
+        expires_at: None,
+        scope: Vec::new(),
+        token_type: "handler".to_string(),
+        credential_blob: Some(blob),
+    }
+}
 
 struct PendingAuth {
     provider_id: String,
@@ -60,6 +77,7 @@ impl AuthManager {
         provider_id: String,
         request_id: String,
         existing_account: Option<Uuid>,
+        params: HashMap<String, String>,
     ) -> Result<(String, String)> {
         let registry = Self::registry()?;
         let manifest = registry
@@ -69,7 +87,7 @@ impl AuthManager {
         if manifest.handler.is_some() {
             return Err(Error::AuthenticationFailed {
                 reason: format!(
-                    "provider {provider_id} uses an external ProviderHandler, which is not wired up yet"
+                    "provider {provider_id} declares a [handler]; use the handler flow, not the OAuth2 flow"
                 ),
             });
         }
@@ -87,6 +105,12 @@ impl AuthManager {
         }
 
         for (key, value) in &manifest.oauth.extra_params {
+            auth_request = auth_request.add_extra_param(key.clone(), value.clone());
+        }
+
+        // Caller hints from `Manager.CreateAccount` params (e.g. `login_hint`)
+        // go on the authorize URL, after the manifest's own extra params.
+        for (key, value) in &params {
             auth_request = auth_request.add_extra_param(key.clone(), value.clone());
         }
 
@@ -212,45 +236,16 @@ impl AuthManager {
         provider_id: String,
         request_id: String,
         existing_account: Option<Uuid>,
+        params: HashMap<String, String>,
     ) -> Result<CompletedAuth> {
         let registry = Self::registry()?;
         let manifest = registry
             .get(&provider_id)
             .ok_or_else(|| Error::InvalidProvider(provider_id.clone()))?;
-        let handler = manifest
-            .handler
-            .as_ref()
-            .ok_or_else(|| Error::AuthenticationFailed {
-                reason: format!("provider {provider_id} has no [handler] section"),
-            })?;
 
-        let connection = zbus::Connection::session().await?;
-        let proxy = accounts_core::proxy::ProviderHandlerProxy::builder(&connection)
-            .destination(handler.bus_name.clone())
-            .map_err(Error::DBus)?
-            .path(handler.object_path.clone())
-            .map_err(Error::DBus)?
-            .build()
-            .await
-            .map_err(Error::DBus)?;
+        let (identity, blob) = Self::call_handler(manifest, params).await?;
 
-        // TODO: forward Manager.CreateAccount's params once they are plumbed through.
-        let (identity, blob) =
-            proxy
-                .authenticate(HashMap::new())
-                .await
-                .map_err(|e| Error::AuthenticationFailed {
-                    reason: format!("provider handler {} failed: {e}", handler.bus_name),
-                })?;
-
-        let credentials = Credential {
-            access_token: String::new(),
-            refresh_token: None,
-            expires_at: None,
-            scope: Vec::new(),
-            token_type: "handler".to_string(),
-            credential_blob: Some(blob),
-        };
+        let credentials = handler_credential(blob);
 
         let account = if let Some(existing_id) = existing_account {
             let mut account = AccountsConfig::config()
@@ -288,6 +283,70 @@ impl AuthManager {
             existing_account,
             account,
         })
+    }
+
+    /// Re-runs `ProviderHandler.Authenticate` for an existing handler-based
+    /// account, passing the stored blob back so the handler can mint a fresh
+    /// credential (its own "later invocation" — the interface stays one method
+    /// wide). Called when `Credentials.InvalidateToken` marked the account stale.
+    pub async fn refresh_handler_credentials(&mut self, account_id: &Uuid) -> Result<Credential> {
+        let account = AccountsConfig::config()
+            .get_account(account_id)
+            .ok_or_else(|| Error::AccountNotFound(account_id.to_string()))?;
+        let registry = Self::registry()?;
+        let manifest = registry
+            .get(&account.provider)
+            .ok_or_else(|| Error::InvalidProvider(account.provider.clone()))?;
+
+        let mut params = HashMap::new();
+        if let Some(blob) = self
+            .storage
+            .get_account_credentials(account_id)
+            .await
+            .ok()
+            .and_then(|c| c.credential_blob)
+        {
+            params.insert(
+                HANDLER_BLOB_PARAM.to_string(),
+                base64::engine::general_purpose::STANDARD.encode(blob),
+            );
+        }
+
+        let (_identity, blob) = Self::call_handler(manifest, params).await?;
+        let credentials = handler_credential(blob);
+        self.storage
+            .set_account_credentials(account_id, &credentials)
+            .await?;
+        Ok(credentials)
+    }
+
+    async fn call_handler(
+        manifest: &accounts_core::ProviderManifest,
+        params: HashMap<String, String>,
+    ) -> Result<(String, Vec<u8>)> {
+        let handler = manifest
+            .handler
+            .as_ref()
+            .ok_or_else(|| Error::AuthenticationFailed {
+                reason: format!("provider {} has no [handler] section", manifest.provider.id),
+            })?;
+
+        let connection = zbus::Connection::session().await?;
+        let proxy = accounts_core::proxy::ProviderHandlerProxy::builder(&connection)
+            .destination(handler.bus_name.clone())
+            .map_err(Error::DBus)?
+            .path(handler.object_path.clone())
+            .map_err(Error::DBus)?
+            .build()
+            .await
+            .map_err(Error::DBus)?;
+
+        proxy
+            .authenticate(params)
+            .await
+            .map_err(|e| Error::AuthenticationFailed {
+                reason: format!("provider handler {} failed: {e}", handler.bus_name),
+            })
     }
 
     /// Fetches the account identity from the provider's `[userinfo]` endpoint:

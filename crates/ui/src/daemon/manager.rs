@@ -80,7 +80,7 @@ impl ManagerInterface {
     async fn create_account(
         &self,
         provider_id: &str,
-        _params: HashMap<String, String>,
+        params: HashMap<String, String>,
     ) -> Result<OwnedObjectPath> {
         let Some(registry) = crate::daemon::REGISTRY.get() else {
             return Err(Error::InvalidProviderConfig.into());
@@ -89,9 +89,13 @@ impl ManagerInterface {
             return Err(Error::InvalidProvider(provider_id.to_string()).into());
         }
 
-        let path = create_request(provider_id.to_string(), None, self.auth_manager.clone()).await?;
-
-        Ok(path)
+        create_request(
+            provider_id.to_string(),
+            None,
+            params,
+            self.auth_manager.clone(),
+        )
+        .await
     }
 
     #[zbus(signal)]
@@ -114,6 +118,7 @@ impl ManagerInterface {
 pub(crate) async fn create_request(
     provider_id: String,
     existing_account: Option<Uuid>,
+    params: HashMap<String, String>,
     auth_manager: Arc<Mutex<AuthManager>>,
 ) -> Result<OwnedObjectPath> {
     let Some(connection) = crate::daemon::CONNECTION.get() else {
@@ -149,6 +154,7 @@ pub(crate) async fn create_request(
         tokio::spawn(run_handler_flow(
             provider_id,
             existing_account,
+            params,
             request_id,
             state,
             auth_manager,
@@ -158,6 +164,7 @@ pub(crate) async fn create_request(
         tokio::spawn(run_oauth_flow(
             provider_id,
             existing_account,
+            params,
             request_id,
             state,
             auth_manager,
@@ -174,6 +181,7 @@ pub(crate) async fn create_request(
 async fn run_handler_flow(
     provider_id: String,
     existing_account: Option<Uuid>,
+    params: HashMap<String, String>,
     request_id: String,
     state: Arc<Mutex<RequestState>>,
     auth_manager: Arc<Mutex<AuthManager>>,
@@ -188,7 +196,7 @@ async fn run_handler_flow(
     let completed = auth_manager
         .lock()
         .await
-        .authenticate_via_handler(provider_id, request_id.clone(), existing_account)
+        .authenticate_via_handler(provider_id, request_id.clone(), existing_account, params)
         .await;
 
     let completed = match completed {
@@ -248,6 +256,7 @@ async fn terminal_timeout(
 async fn run_oauth_flow(
     provider_id: String,
     existing_account: Option<Uuid>,
+    params: HashMap<String, String>,
     request_id: String,
     state: Arc<Mutex<RequestState>>,
     auth_manager: Arc<Mutex<AuthManager>>,
@@ -256,7 +265,7 @@ async fn run_oauth_flow(
     let url_result = auth_manager
         .lock()
         .await
-        .start_auth_flow(provider_id, request_id.clone(), existing_account)
+        .start_auth_flow(provider_id, request_id.clone(), existing_account, params)
         .await;
 
     let csrf_token = match url_result {
