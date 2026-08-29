@@ -542,8 +542,14 @@ impl cosmic::Application for AppModel {
                     // The user gave up while the daemon was preparing the URL.
                     return Task::none();
                 };
+                // The request watch can observe `needs-interaction` more than
+                // once (initial read + the StatusChanged signal); only open the
+                // browser the first time. "Open again" stays manual.
+                let already_open = pending.url.is_some();
                 pending.url = Some(url.clone());
-                tasks.push(self.update(Message::LaunchUrl(url)));
+                if !already_open {
+                    tasks.push(self.update(Message::LaunchUrl(url)));
+                }
             }
             Message::OpenAuthUrl => {
                 if let Some(url) = self
