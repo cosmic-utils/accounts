@@ -1,0 +1,31 @@
+[package]
+name = "accounts_consent"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "The consent prompt dialog for Accounts for COSMIC."
+repository = "https://github.com/cosmic-utils/accounts"
+
+[[bin]]
+name = "accounts-consent"
+path = "src/main.rs"
+
+[lib]
+name = "accounts_consent"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1.41.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zbus = { workspace = true }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+features = [
+    "a11y",
+    "tokio",
+    "winit",
+    "wayland",
+    "wgpu",
+]

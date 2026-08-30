@@ -9,31 +9,32 @@ use zbus::{
     interface,
 };
 
-use crate::daemon::CONNECTION;
-use crate::daemon::services::{
+use crate::CONNECTION;
+use crate::services::{
     account_identity, endpoint_object_path, provider_manifest, refresh_account_credentials,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ContactsService {
+pub struct TasksService {
     account: Account,
 }
 
-impl ContactsService {
+impl TasksService {
     pub fn new(account: Account) -> Self {
         Self { account }
     }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Contacts")]
-impl ContactsService {
-    /// CardDAV collection/principal URL.
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Tasks")]
+impl TasksService {
+    /// CalDAV collection URL for VTODO components; may equal the calendar URL
+    /// for providers that don't separate them.
     #[zbus(property)]
     async fn uri(&self) -> Result<String> {
         let manifest = provider_manifest(&self.account)?;
-        let endpoint = manifest.endpoint.contacts.as_ref().ok_or_else(|| {
+        let endpoint = manifest.endpoint.tasks.as_ref().ok_or_else(|| {
             Error::Failed(format!(
-                "Provider {} has no contacts endpoint",
+                "Provider {} has no tasks endpoint",
                 self.account.provider
             ))
         })?;
@@ -48,22 +49,22 @@ impl ContactsService {
 }
 
 #[async_trait]
-impl AccountService for ContactsService {
+impl AccountService for TasksService {
     fn name(&self) -> &str {
-        "Contacts"
+        "Tasks"
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Endpoint.Contacts"
+        "dev.edfloreshz.Accounts.Endpoint.Tasks"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.services.contains_key(&Service::Contacts)
+        account.services.contains_key(&Service::Tasks)
     }
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding the contacts endpoint for account {}",
+            "Adding the tasks endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
@@ -77,13 +78,13 @@ impl AccountService for ContactsService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing the contacts endpoint for account {}",
+            "Removing the tasks endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<ContactsService, String>(endpoint_object_path(&self.account))
+                .remove::<TasksService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)

@@ -4,9 +4,10 @@
 //! `Credentials.GetAccessToken`.
 //!
 //! It runs as a **separate process** from the credentials daemon (a security
-//! boundary: the daemon stays headless and toolkit-agnostic), but it is the same
-//! `accounts_ui` binary re-entered in a third mode, D-Bus-activated via the
-//! `accounts-consent-prompt` wrapper which sets `ACCOUNTS_CONSENT_PROMPT`.
+//! boundary: the daemon stays headless and toolkit-agnostic). It is its own
+//! binary, D-Bus-activated via the `accounts-consent-prompt` wrapper; the
+//! `accounts_ui` binary also re-enters this code when `ACCOUNTS_CONSENT_PROMPT`
+//! is set.
 //!
 //! Single-shot: serves exactly one `Prompt` call, shows the dialog, returns the
 //! decision, and exits. The bus re-activates it for the next prompt.
@@ -82,7 +83,8 @@ impl PromptService {
     }
 }
 
-/// Entry point for the `ACCOUNTS_CONSENT_PROMPT` mode of the `accounts_ui` binary.
+/// Entry point for the consent prompt: waits for one `Prompt` call, shows the
+/// dialog, returns the decision, and exits.
 pub fn run() -> cosmic::iced::Result {
     let slot: JobSlot = Arc::new(Mutex::new(None));
 

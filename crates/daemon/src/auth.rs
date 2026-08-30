@@ -13,7 +13,7 @@ use oauth2::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::daemon::{error::*, storage::CredentialStorage};
+use crate::{error::*, storage::CredentialStorage};
 
 /// A `Credential` wrapping an opaque `ProviderHandler` blob.
 fn handler_credential(blob: Vec<u8>) -> Credential {
@@ -55,7 +55,7 @@ impl AuthManager {
     }
 
     fn registry() -> Result<&'static ProviderRegistry> {
-        crate::daemon::REGISTRY
+        crate::REGISTRY
             .get()
             .ok_or(Error::InvalidProviderConfig)
     }

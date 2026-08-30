@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/consent",
+    "crates/daemon",
     "crates/ui",
     "crates/example-handler",
 ]

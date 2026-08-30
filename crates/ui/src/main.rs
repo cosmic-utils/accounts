@@ -3,31 +3,27 @@
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod app;
-mod consent;
-mod daemon;
 mod i18n;
 
 fn main() -> cosmic::iced::Result {
-    if std::env::var("RUST_LOG").is_err() {
-        unsafe {
-            std::env::set_var("RUST_LOG", "accounts_ui=info");
-        }
-    }
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("accounts_ui=info"));
+
     tracing_subscriber::registry()
-        .with(EnvFilter::from_env("RUST_LOG"))
+        .with(filter)
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     if std::env::var("ACCOUNTS_HEADLESS").is_ok() {
         let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
         runtime
-            .block_on(daemon::run())
+            .block_on(accounts_daemon::run())
             .expect("daemon exited with an error");
         return Ok(());
     }
 
     if std::env::var("ACCOUNTS_CONSENT_PROMPT").is_ok() {
-        return consent::run();
+        return accounts_consent::run();
     }
 
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();

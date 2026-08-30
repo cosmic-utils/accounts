@@ -1,6 +1,7 @@
 use accounts_core::{
     AccountService,
     models::{Account, Service},
+    registry::MailEndpointManifest,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -9,36 +10,55 @@ use zbus::{
     interface,
 };
 
-use crate::daemon::CONNECTION;
-use crate::daemon::services::{
-    account_identity, endpoint_object_path, provider_manifest, refresh_account_credentials,
+use crate::CONNECTION;
+use crate::services::{
+    endpoint_object_path, provider_manifest, refresh_account_credentials,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TasksService {
+pub struct MailService {
     account: Account,
 }
 
-impl TasksService {
+impl MailService {
     pub fn new(account: Account) -> Self {
         Self { account }
     }
+
+    fn endpoint(&self) -> Result<&'static MailEndpointManifest> {
+        provider_manifest(&self.account)?
+            .endpoint
+            .mail
+            .as_ref()
+            .ok_or_else(|| {
+                Error::Failed(format!(
+                    "Provider {} has no mail endpoint",
+                    self.account.provider
+                ))
+            })
+    }
 }
 
-#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Tasks")]
-impl TasksService {
-    /// CalDAV collection URL for VTODO components; may equal the calendar URL
-    /// for providers that don't separate them.
+#[interface(name = "dev.edfloreshz.Accounts.Endpoint.Mail")]
+impl MailService {
     #[zbus(property)]
-    async fn uri(&self) -> Result<String> {
-        let manifest = provider_manifest(&self.account)?;
-        let endpoint = manifest.endpoint.tasks.as_ref().ok_or_else(|| {
-            Error::Failed(format!(
-                "Provider {} has no tasks endpoint",
-                self.account.provider
-            ))
-        })?;
-        Ok(endpoint.resolve(&account_identity(&self.account)))
+    async fn imap_host(&self) -> Result<String> {
+        Ok(self.endpoint()?.imap_host.clone())
+    }
+
+    #[zbus(property)]
+    async fn imap_port(&self) -> Result<u16> {
+        Ok(self.endpoint()?.imap_port)
+    }
+
+    #[zbus(property)]
+    async fn smtp_host(&self) -> Result<String> {
+        Ok(self.endpoint()?.smtp_host.clone())
+    }
+
+    #[zbus(property)]
+    async fn smtp_port(&self) -> Result<u16> {
+        Ok(self.endpoint()?.smtp_port)
     }
 
     /// Mirrors `Credentials.AuthMethod`.
@@ -49,22 +69,22 @@ impl TasksService {
 }
 
 #[async_trait]
-impl AccountService for TasksService {
+impl AccountService for MailService {
     fn name(&self) -> &str {
-        "Tasks"
+        "Mail"
     }
 
     fn interface_name(&self) -> &str {
-        "dev.edfloreshz.Accounts.Endpoint.Tasks"
+        "dev.edfloreshz.Accounts.Endpoint.Mail"
     }
 
     fn is_supported(&self, account: &Account) -> bool {
-        account.services.contains_key(&Service::Tasks)
+        account.services.contains_key(&Service::Email)
     }
 
     async fn add_service(&self) -> Result<bool> {
         tracing::info!(
-            "Adding the tasks endpoint for account {}",
+            "Adding the mail endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
@@ -78,13 +98,13 @@ impl AccountService for TasksService {
 
     async fn remove_service(&self) -> Result<bool> {
         tracing::info!(
-            "Removing the tasks endpoint for account {}",
+            "Removing the mail endpoint for account {}",
             self.account.dbus_id()
         );
         if let Some(connection) = CONNECTION.get() {
             connection
                 .object_server()
-                .remove::<TasksService, String>(endpoint_object_path(&self.account))
+                .remove::<MailService, String>(endpoint_object_path(&self.account))
                 .await?;
         }
         Ok(false)

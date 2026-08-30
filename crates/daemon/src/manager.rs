@@ -1,4 +1,4 @@
-use crate::daemon::{
+use crate::{
     Error,
     auth::AuthManager,
     request::{RequestInterface, RequestState, RequestStatus, request_object_path},
@@ -55,7 +55,7 @@ impl ManagerInterface {
     }
 
     async fn list_providers(&self) -> Result<Vec<OwnedObjectPath>> {
-        let Some(registry) = crate::daemon::REGISTRY.get() else {
+        let Some(registry) = crate::REGISTRY.get() else {
             return Ok(Vec::new());
         };
         Ok(registry
@@ -82,7 +82,7 @@ impl ManagerInterface {
         provider_id: &str,
         params: HashMap<String, String>,
     ) -> Result<OwnedObjectPath> {
-        let Some(registry) = crate::daemon::REGISTRY.get() else {
+        let Some(registry) = crate::REGISTRY.get() else {
             return Err(Error::InvalidProviderConfig.into());
         };
         if registry.get(provider_id).is_none() {
@@ -130,10 +130,10 @@ pub(crate) async fn create_request(
     params: HashMap<String, String>,
     auth_manager: Arc<Mutex<AuthManager>>,
 ) -> Result<OwnedObjectPath> {
-    let Some(connection) = crate::daemon::CONNECTION.get() else {
+    let Some(connection) = crate::CONNECTION.get() else {
         return Err(Error::InvalidProviderConfig.into());
     };
-    let Some(requests) = crate::daemon::REQUESTS.get() else {
+    let Some(requests) = crate::REQUESTS.get() else {
         return Err(Error::InvalidProviderConfig.into());
     };
 
@@ -154,7 +154,7 @@ pub(crate) async fn create_request(
         )
         .await?;
 
-    let uses_handler = crate::daemon::REGISTRY
+    let uses_handler = crate::REGISTRY
         .get()
         .and_then(|registry| registry.get(&provider_id))
         .is_some_and(|manifest| manifest.handler.is_some());
@@ -217,9 +217,9 @@ async fn run_handler_flow(
     };
 
     let (Some(config), Some(grants), Some(stale)) = (
-        crate::daemon::CONFIG.get(),
-        crate::daemon::GRANTS.get(),
-        crate::daemon::STALE.get(),
+        crate::CONFIG.get(),
+        crate::GRANTS.get(),
+        crate::STALE.get(),
     ) else {
         fail_request(
             &connection,
@@ -231,7 +231,7 @@ async fn run_handler_flow(
         return;
     };
 
-    crate::daemon::finalize_completed_auth(
+    crate::finalize_completed_auth(
         &connection,
         config,
         &auth_manager,
@@ -384,7 +384,7 @@ fn schedule_cleanup(connection: Connection, request_id: String) {
             .object_server()
             .remove::<RequestInterface, _>(path)
             .await;
-        if let Some(requests) = crate::daemon::REQUESTS.get() {
+        if let Some(requests) = crate::REQUESTS.get() {
             requests.lock().await.remove(&request_id);
         }
     });

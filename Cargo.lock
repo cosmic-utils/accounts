@@ -102,6 +102,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "accounts_consent"
+version = "0.1.0"
+dependencies = [
+ "libcosmic",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
+]
+
+[[package]]
 name = "accounts_core"
 version = "0.1.0"
 dependencies = [
@@ -121,6 +132,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "accounts_daemon"
+version = "0.1.0"
+dependencies = [
+ "accounts_core",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "cosmic-config",
+ "oauth2",
+ "reqwest",
+ "rusqlite",
+ "secret-service",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "zbus",
+ "zbus_polkit",
+]
+
+[[package]]
 name = "accounts_example_handler"
 version = "0.1.0"
 dependencies = [
@@ -136,33 +173,24 @@ dependencies = [
 name = "accounts_ui"
 version = "0.1.0"
 dependencies = [
+ "accounts_consent",
  "accounts_core",
- "async-trait",
- "base64 0.22.1",
+ "accounts_daemon",
  "chrono",
- "cosmic-config",
  "futures-util",
  "i18n-embed 0.15.4",
  "i18n-embed-fl 0.9.4",
  "libcosmic",
- "oauth2",
  "open",
  "reqwest",
- "rusqlite",
  "rust-embed",
- "secret-service",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
  "tokio",
- "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
- "url",
  "uuid",
  "vergen",
- "zbus",
- "zbus_polkit",
 ]
 
 [[package]]

@@ -127,7 +127,7 @@ impl RequestInterface {
             self.auth_manager.lock().await.discard_pending(&csrf_token);
         }
 
-        if let Some(requests) = crate::daemon::REQUESTS.get() {
+        if let Some(requests) = crate::REQUESTS.get() {
             requests.lock().await.remove(&self.id);
         }
 

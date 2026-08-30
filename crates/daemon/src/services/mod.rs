@@ -25,7 +25,7 @@ pub(crate) fn endpoint_object_path(account: &Account) -> String {
 pub(crate) fn provider_manifest(
     account: &Account,
 ) -> Result<&'static accounts_core::ProviderManifest> {
-    crate::daemon::REGISTRY
+    crate::REGISTRY
         .get()
         .and_then(|registry| registry.get(&account.provider))
         .ok_or_else(|| Error::Failed(format!("Unknown provider: {}", account.provider)))
@@ -42,7 +42,7 @@ pub(crate) fn account_identity(account: &Account) -> String {
 /// Refresh the account's stored credentials if they have expired, so the
 /// endpoint's consumer can rely on `Credentials.GetAccessToken` succeeding.
 pub(crate) async fn refresh_account_credentials(account: &mut Account) -> Result<()> {
-    let mut auth = crate::daemon::auth::AuthManager::new()
+    let mut auth = crate::auth::AuthManager::new()
         .await
         .map_err(|e| Error::Failed(format!("could not open the auth manager: {e}")))?;
     auth.ensure_credentials(account)

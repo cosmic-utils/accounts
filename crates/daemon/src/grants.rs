@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::daemon::{Error, Result};
+use crate::{Error, Result};
 
 /// A stored consent decision for one `(account, service, caller)` triple.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

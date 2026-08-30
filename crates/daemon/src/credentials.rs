@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use zbus::{fdo::Result, interface, message::Header};
 
-use crate::daemon::{
+use crate::{
     Error,
     auth::AuthManager,
     caller,
@@ -83,7 +83,7 @@ impl CredentialsInterface {
             )));
         }
 
-        let Some(service) = crate::daemon::grants::normalize_service(service) else {
+        let Some(service) = crate::grants::normalize_service(service) else {
             return Err(TokenError::Failed(format!("unknown service {service:?}")));
         };
 

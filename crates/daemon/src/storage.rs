@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::daemon::{Error, Result};
+use crate::{Error, Result};
 use accounts_core::models::Credential;
 use secret_service::{EncryptionType, SecretService};
 use uuid::Uuid;

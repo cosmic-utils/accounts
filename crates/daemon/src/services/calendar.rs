@@ -9,8 +9,8 @@ use zbus::{
     interface,
 };
 
-use crate::daemon::CONNECTION;
-use crate::daemon::services::{
+use crate::CONNECTION;
+use crate::services::{
     account_identity, endpoint_object_path, provider_manifest, refresh_account_credentials,
 };
 

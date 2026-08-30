@@ -1,4 +1,4 @@
-use crate::daemon::{
+use crate::{
     Error, auth::AuthManager, credentials::CredentialsInterface, grants::GrantStore,
     manager::create_request, polkit, services::ServiceFactory,
 };
@@ -197,7 +197,7 @@ impl AccountInterface {
             tracing::warn!("failed to clear grants for removed account {id}: {e}");
         }
 
-        if let Some(connection) = crate::daemon::CONNECTION.get() {
+        if let Some(connection) = crate::CONNECTION.get() {
             let path = format!(
                 "/dev/edfloreshz/Accounts/Accounts/{}",
                 id.to_string().replace('-', "_")
@@ -213,7 +213,7 @@ impl AccountInterface {
 
             if let Ok(iface_ref) = connection
                 .object_server()
-                .interface::<_, crate::daemon::manager::ManagerInterface>(
+                .interface::<_, crate::manager::ManagerInterface>(
                     "/dev/edfloreshz/Accounts/Manager",
                 )
                 .await
@@ -223,7 +223,7 @@ impl AccountInterface {
                     id.to_string().replace('-', "_")
                 ))
                 .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-                crate::daemon::manager::ManagerInterface::account_removed(
+                crate::manager::ManagerInterface::account_removed(
                     iface_ref.signal_emitter(),
                     account_path,
                 )
@@ -256,7 +256,7 @@ impl AccountInterface {
         caller_identity: &str,
     ) -> Result<()> {
         self.authorize_manage(Some(&header)).await?;
-        let Some(service) = crate::daemon::grants::normalize_service(service) else {
+        let Some(service) = crate::grants::normalize_service(service) else {
             return Err(Error::InvalidService(service.to_string()).into());
         };
         self.grants
@@ -297,18 +297,18 @@ impl AccountInterface {
     /// the daemon can react to it being enabled or disabled without diffing the
     /// `Enabled` property.
     async fn emit_account_toggled(&self, enabled: bool) {
-        let Some(connection) = crate::daemon::CONNECTION.get() else {
+        let Some(connection) = crate::CONNECTION.get() else {
             return;
         };
-        let path = crate::daemon::manager::account_object_path(&self.id);
+        let path = crate::manager::account_object_path(&self.id);
         if let Ok(iface) = connection
             .object_server()
-            .interface::<_, crate::daemon::manager::ManagerInterface>(
+            .interface::<_, crate::manager::ManagerInterface>(
                 "/dev/edfloreshz/Accounts/Manager",
             )
             .await
         {
-            let _ = crate::daemon::manager::ManagerInterface::account_toggled(
+            let _ = crate::manager::ManagerInterface::account_toggled(
                 iface.signal_emitter(),
                 path,
                 enabled,
